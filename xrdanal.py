@@ -30,6 +30,8 @@ from scipy.optimize import fsolve
 from scipy.integrate import simps
 import os.path
 import csv
+this_dir, this_filename = os.path.split( __file__ )
+DATA_PATH = os.path.join( this_dir, "data" )
 
 def calc_surf( spectre ):
 	if spectre.etat.calcul == False:
@@ -170,11 +172,9 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			return
 
 
-	[mu_m, A, rho, lam] = read_melange( mat, emetteur, raie, affich )
+	[mu_m, A, rho, lam, f1, f2] = read_melange( mat, emetteur, raie, affich )
 
 	if anom_scatt == True: #Facteurs de correction pour dispersion "anormale". Ici pour Cu K-alpha dans Fe [ITC vol. C table 4.2.6.8]
-		f1 = -1.1336
-		f2 = 3.1974
 		if affich == 1:
 			print( u'\nCorrection pour dispersion anormale :' )
 			print( u'\tRéel : \t\tf1 = ' + str(f1) )
@@ -255,17 +255,33 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 				[(2, 0, 3)], [(1, 0, 5)], [(1, 1, 4)], [(2, 1, 0)], [(2, 1, 1)], [(2, 0, 4)],
 				[(0, 0, 6)], [(2, 1, 2)], [(1, 0, 6)], [(2, 1, 3)], [(3, 0, 0)], [(2, 0, 5)],
 				[(3, 0, 2)], [(2, 1, 4)] ]
-		liste_p = [	[2, 6, 12, 12, 12, 6,
+		liste_p = [	2, 6, 12, 12, 12, 6,
 				2, 12, 6, 12, 12, 12,
 				12, 12, 12, 12, 24, 12,
 				2, 24, 12, 24, 6, 12,
-				12, 24 			] ]
+				12, 24 			] 
 
 		for i in range( len(liste_pics) ):
-			d = calc_d( liste_pics[i][0], a, c, 'h' )
+			(h, k, l) = liste_pics[i][0]
+			d = calc_d( (h, k, l), a, c, 'h' )
 			theta = np.arcsin( lam / (2*d) )
 			s = np.sin(theta) / lam
-			sF = scatt_f( s, elem = 'Cd' )
+			sF = scatt_f( s ) + f1 + 1j*f2
+			FF = 4 * (sF*np.conj(sF)).real * (np.cos( np.pi*( (h+2*k)/3.+l/2.) ) )**2
+			
+			p = liste_p[i]
+			Lf = lor_f( theta )
+			pf = pol_f( theta, alpha )
+			Tf = temp_f( s )
+			R = 1./V**2 * FF*p*Lf*pf*Tf
+			liste_pics[i].append(p)
+			liste_pics[i].append(d)
+			liste_pics[i].append(theta)
+			liste_pics[i].append(FF)
+			liste_pics[i].append(Lf)
+			liste_pics[i].append(pf)
+			liste_pics[i].append(Tf)
+			liste_pics[i].append(R)
 
 
 
@@ -309,7 +325,7 @@ def calc_a( hkl, theta, lam ):
 	d = lam / (2*np.sin(theta))
 	return d * np.sqrt( h**2 + k**2 + l**2 )
 		
-def scatt_f( s, elem = 'Fe' ):
+def scatt_f( s, mat = 'Fe' ):
 	"""
 
 	Calcul du facteur de diffusion (scattering factor) atomique.
@@ -322,40 +338,48 @@ def scatt_f( s, elem = 'Fe' ):
 		lambda : longueur d'onde du rayon X incident
 	
 	Args :
-		elem : Élément calculé (Fe par défaut)
+		mat : Matériau calculé (Fe par défaut) -> Accepte une liste de type 'Matériau'
 		s : Tel que défini plus haut
 
 	"""
 
-	if elem == 'Fe':
-		a = [11.7695, 7.35730, 3.52220, 2.30450]
-		b = [4.76110, 0.307200, 15.3535, 76.8805]
-		c = 1.03690
-
-	elif elem == 'Cd':
-		a = [19.2214, 17.6444, 4.46100, 1.60290]
-		b = [0.594600, 6.90890, 27.7008, 87.4825]
-		c = 5.06940
-
-	if type(s) == int or type(s) == float or type(s) == np.float64:
-		s_f = c
-		for i in range(4):
-			s_f += a[i]*np.exp( -b[i]*s**2 )
-
-		if s > 2: 
-			print( u'Attention : s > 2, corrélation imprécise' )
-
-	if type(s) == np.ndarray or type(s) == list:
+	#Si l'utilisateur fournit une liste d'angle, une récursion est faite pour chacun des angles et un vecteur est retourné
+	if type(s) == np.ndarray or type(s) == list: 
 		s_f = np.array([])
 
 		for j in range( len(s) ):
-			s_f_temp = c
-			for i in range(4):
-				s_f_temp += a[i]*np.exp( -b[i]*s[j]**2 )
-			
+			s_f_temp = scatt_f( s[j], elem )
 			s_f = np.append( s_f, s_f_temp )
-		if max(s) >2:
-			print( u'Attention : s > 2, corrélation imprécise' )
+
+	#Ici, un seul angle est étudié
+	elif type(s) == int or type(s) == float or type(s) == np.float64:
+
+		#S'il s'agit d'un mélange de plusieurs éléments, une récursion est faite pour trouver le facteur moyen pondéré
+		#selon la fraction atomique
+		if type( mat ) == list:
+			mat_conv( elem, 'a' )
+			s_f_vect = []
+			for i in range( len(mat) - 1):
+				mat_temp = mat[i+1][0]
+				n = mat[i+1][1]
+				s_f_vect.append( scatt_f( s, mat_temp ) * n )
+			
+			s_f = np.sum( s_f_vect )
+
+		#Un seul élément, substance pure
+		elif type( mat ) == str:
+			X = read_el( mat )
+			a = X[6]
+			b = X[7]
+			c = X[8]
+
+			s_f = c
+			for i in range(4):
+				s_f += a[i]*np.exp( -b[i]*s**2 )
+
+			if s > 2: 
+				print( u'Attention : s > 2, corrélation imprécise' )
+				
 	return s_f
 
 
@@ -394,7 +418,7 @@ def lor_f( theta ):
 	return 1 / (np.sin(theta)**2 * np.cos(theta))
 
 
-def temp_f( s, elem = 'Fe', A = 55.845, T = 293., DebyeT = 430.  ):
+def temp_f( s, mat = 'Fe', T = 293. ):
 	"""
 	Fonction calculant le facteur de la température exp(-2*M)  [Cullity]
 
@@ -403,30 +427,38 @@ def temp_f( s, elem = 'Fe', A = 55.845, T = 293., DebyeT = 430.  ):
 		... = 1.1490292193e4 * T/(A*DebyeT) * [phiofx(x) + x/4]*s**2
 		h = Constante de Planck = 6.626e.34 m^2.kg/s
 		m = Masse d'un atome = A / N
-	(arg)	A = Masse atomique (Valeur par défaut 55.845 g/mol : Fer )
+		A = Masse atomique (Valeur par défaut : Fer )
 		N = Nombre d'Avogadro = 6.022e23 mol^(-1)
 		k = Constante de Boltzmann = 1.381e-23 m^2.kg/(s^2.K)
 	(arg)	T = Température (Valeur par défaut 293 K : Température ambiante)	
-	(arg)	DebyeT = Température de Debye (Valeur par défaut 430 K : Fer)
+		DebyeT = Température de Debye (Valeur par défaut : Fer)
 		x = DebyeT / T
 		phiofx(x) = Fonction de Debye = 1/x * int_0^(inf) t*dt/(exp(t)-1)
 	(arg)	s = sin(theta)/lambda ( Angstrom^(-1) )
 		theta = Angle de diffraction (degrés)
 		lambda = Longueur d'onde des rayons X incidents (Angstrom)
+	(arg)	mat = Matériau, sous forme d'élément (str) ou mélange (list)
 	
 
 	"""
 
-	if elem == 'Fe':
-		A = 55.845
-		debyeT = 430
-	elif elem == 'Cd':
-		A = 112.411
-		debyeT = 175 #[https://www.ncnr.nist.gov/equipment/ref.html]
+	if type( mat ) == str:
+		X = read_el( mat )
+		DebyeT = X[5]
+		A = X[2]
+		x = DebyeT / T
+		M = 1.1490292193e4 * T / (A*DebyeT**2) * (phiofx(x) + x/4)*s**2
+		return np.exp(-2*M)
 
-	x = DebyeT / T
-	M = 1.1490292193e4 * T / (A*DebyeT**2) * (phiofx(x) + x/4)*s**2
-	return np.exp(-2*M)
+	elif type( mat ) == list:
+		mat_conv( mat, 'a' )
+		T_f_vect = []
+		for i in range( len(mat) - 1):
+			mat_temp = mat[i+1][0]
+			n = mat[i+1][1]
+			T_f_vect.append( temp_f( s, mat_temp, T ) * n )
+		
+		return np.sum( T_f_vect )
 
 def phiofx(x):
 	"""
@@ -480,7 +512,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		affich :	Imprimer les résultats a l'ecran (Bool.)
 
 	Extrants:
-		[mu_m, Z, A, rho, lambda, DebyeT, a, b, c]
+		[mu_m, Z, A, rho, lambda, DebyeT, a, b, c, f1, f2]
 		mu_m : 		Coefficient d'absorption massique (cm2/g)
 		Z : 		Numéro atomique
 		A :		Masse atomique (g/mol)
@@ -490,6 +522,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		a, b, c :	Coefficients pour le calcul du facteur de diffusion
 			a = [a1, a2, a3, a4]
 			b = [b1, b2, b3, b4]
+		f1, f2 :	Facteurs réel et imaginaire de correction du facteur de diffusion	
 
 	"""
 	#Choisit la bonne colonne pour la lecture des informations
@@ -497,8 +530,10 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		rowno = 4
 	elif emetteur == 'Cu':
 		rowno = 6
+		rowno2 = 22
 	elif emetteur == 'Co':
 		rowno = 8
+		rowno2 = 24
 	elif emetteur == 'Cr':
 		rowno = 10
 	else:
@@ -515,11 +550,11 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		return
 
 
-	if not os.path.exists( 'Coeff_abs.csv' ):
+	if not os.path.exists( os.path.join( DATA_PATH, 'Coeff_abs.csv' ) ):
 		print( u'Erreur, fichier de données introuvable' )
 		return
 
-	with open( 'Coeff_abs.csv', 'rb' ) as csvfile:
+	with open( os.path.join( DATA_PATH, 'Coeff_abs.csv' ), 'rb' ) as csvfile:
 		csvreader = csv.reader( csvfile, delimiter = ',' )
 		for row in csvreader:
 			if row[0] == 'Lambda':
@@ -533,6 +568,8 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 				a = [ float( row[13] ), float( row[14] ), float( row[15] ), float( row[16] ) ]
 				b = [ float( row[17] ), float( row[18] ), float( row[19] ), float( row[20] ) ]
 				c = float( row[21] )
+				f1 = float( row[rowno2] )
+				f2 = float( row[rowno2 + 1] )
 				mu_l = mu_m*rho
 				if affich == 1 or affich == 2 or affich == 3:
 					print( u'\n----\nÉmetteur :\t\t' + emetteur + ' K-' + raie )
@@ -544,6 +581,10 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 					print( u'Densité :\t\t' + str( rho ) + '\tg/cm3' )
 					print( 'Coeff. abs. mass. :\t' + str( mu_m ) + '\tcm2/g' )
 					print( 'Coeff. abs. lin. :\t' + str( mu_l ) + '\tcm-1')
+					print( 'Temp. de Debye :\t' + str( DebyeT ) + '\tK' )
+					print( 'Facteurs de correction pour diffusion anormale :' )
+					print( '\tf1 :\t\t' + str( f1 ) )
+					print( '\tf2 :\t\t' + str( f2 ) )
 
 				if affich == 2 or affich == 3:
 					z=np.arange(0, 5/mu_l, 0.05/mu_l)
@@ -555,7 +596,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 					plt.legend( )
 					if affich == 2:
 						plt.show()
-				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c]
+				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c, f1, f2]
 
 	print 'Erreur, absorbeur inexistant'		
 
@@ -637,11 +678,12 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		affich :	Imprimer les résultats a l'ecran (Bool.)
 
 	Extrants:
-		[mu_m, A, rho, lambda]
+		[mu_m, Z, A, rho, lambda, f1, f2]
 		mu_m : 		Coefficient d'absorption massique moyen (cm2/g)
 		A :		Masse atomique moyenne (g/mol)
 		rho :		Densité moyenne (g/cm3)
 		lam :		Longueur d'onde du rayonnement incident (Angstrom)
+		f1, f2 :	Facteurs réel et imaginaire de correction du facteur de diffusion	
 	
 	"""
 	mat_conv( mat, 'm' )
@@ -649,6 +691,8 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 	n_vec = []
 	m_vec = []
 	mu_m_vec = []
+	f1_vec = []
+	f2_vec = []
 
 	for i in range( len(mat) -1 ):
 		X = read_el( mat[i + 1][0], emetteur, raie )
@@ -657,12 +701,16 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		A = X[2]
 		rho = X[3]
 		lam = X[4]
+		f1 = X[9]
+		f2 = X[10]
 
 		m = mat[i + 1][1]
 		m_vec.append( m )
 		n_vec.append( m / A )
 		V_vec.append( m / rho )
 		mu_m_vec.append( m * mu_m )
+		f1_vec.append( f1 * m / A )
+		f2_vec.append( f2 * m / A )
 
 	V_tot = np.sum( V_vec )
 	n_tot = np.sum( n_vec )
@@ -670,7 +718,8 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 	A = 1 / n_tot
 	mu_m = np.sum( mu_m_vec )
 	mu_l = mu_m * rho
-
+	f1 = np.sum( f1_vec ) / n_tot
+	f2 = np.sum( f2_vec ) / n_tot
 		
 	if raie == 'b':
 		raie = 'Beta'
@@ -685,6 +734,9 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		print( u'Densité :\t\t' + str( rho ) + '\tg/cm3' )
 		print( 'Coeff. abs. mass. :\t' + str( mu_m ) + '\tcm2/g' )
 		print( 'Coeff. abs. lin. :\t' + str( mu_l ) + '\tcm-1')
+		print( 'Facteurs de correction pour diffusion anormale :' )
+		print( '\tf1 :\t\t' + str( f1 ) )
+		print( '\tf2 :\t\t' + str( f2 ) )
 
 	if affich == 2 or affich == 3:
 		z=np.arange(0, 5/mu_l, 0.05/mu_l)
@@ -697,7 +749,7 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		if affich == 2:
 			plt.show()
 
-	return [mu_m, A, rho, lam]
+	return [mu_m, A, rho, lam, f1, f2]
 
 def quant( spectre, liste_phases, affich = 1 ):
 	"""
