@@ -41,6 +41,8 @@
 # 13	20170406	S. L.-Riverin	Rajouté fonctionnalités pour modéliser la séparation entre les pics K-alpha1 et Kalpha2. 
 #					Fonctions fit_approx, fit_calcul et iter modifiées. Fonction split_Kalpha rajoutée.
 #
+#					VERSIONS SUBSÉQUENTES : DANS GITHUB
+#
 #######################################################################
 
 

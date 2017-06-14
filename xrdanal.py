@@ -20,6 +20,8 @@
 # 2	20170320	S. L.-Riverin	Correction erreur dans fonction quant et ajout correction pour dispersion anormale dans phase.
 # 3	20170327	S. L.-Riverin	Rajouté calcul paramètre de maille moyen
 #
+#			CHANGEMENTS SUBSÉQUENTS DANS GITHUB
+#
 #######################################################################
 
 import xrdsim
@@ -100,6 +102,7 @@ def calc_surf( spectre ):
 	print( '---\nBruit\t\t' + str(round(spectre.fit.noise, 0 ) ) )
 	print( 'Fond moyen\t' + str(round(np.mean(spectre.data_back.count) ) ) )
 
+
 def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a = 0, c = 0, pourc_C = 0, alpha = 13.3*2*np.pi/360, anom_scatt = True, affich = 0 ):
 	"""
 	Rajoute ou modifie une phase dans la liste des phases disponibles pour l'analyse.
@@ -110,7 +113,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		mat : Composition chimique du matériau  
 		phase_id : Identifiant de la phase, qui sera comparé aux "tags" de le la simulation
 		desc : Texte descriptif de la phase
-		cryst_struct : Structure cristallographique de la phase ('BCC' ou 'FCC')
+		cryst_struct : Structure cristallographique de la phase ('BCC', 'FCC' ou 'HCP')
 		emetteur, raie : Source de rayons X. Valeur par défaut : 'Cu' et 'a' pour Cu K-alpha
 		a, c : Paramètres de maille (Angstrom)
 		pourc_C : Pourcentage de carbone de la microstructure.
@@ -245,24 +248,53 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append(Tf)
 			liste_pics[i].append(R)
 
+	elif cryst_struct == 'HCP':
+		V = 3**0.5*a**2*c/2
+
+		liste_pics = [  [(0, 0, 2)], [(1, 0, 0)], [(1, 0, 1)], [(1, 0, 2)], [(1, 0, 3)], [(1, 1, 0)], 
+				[(0, 0, 4)], [(1, 1, 2)], [(2, 0, 0)], [(2, 0, 1)], [(1, 0, 4)], [(2, 0, 2)],
+				[(2, 0, 3)], [(1, 0, 5)], [(1, 1, 4)], [(2, 1, 0)], [(2, 1, 1)], [(2, 0, 4)],
+				[(0, 0, 6)], [(2, 1, 2)], [(1, 0, 6)], [(2, 1, 3)], [(3, 0, 0)], [(2, 0, 5)],
+				[(3, 0, 2)], [(2, 1, 4)] ]
+		liste_p = [	[2, 6, 12, 12, 12, 6,
+				2, 12, 6, 12, 12, 12,
+				12, 12, 12, 12, 24, 12,
+				2, 24, 12, 24, 6, 12,
+				12, 24 			] ]
+
+		for i in range( len(liste_pics) ):
+			d = calc_d( liste_pics[i][0], a, c, 'h' )
+			theta = np.arcsin( lam / (2*d) )
+			s = np.sin(theta) / lam
+			sF = scatt_f( s, elem = 'Cd' )
+
+
+
 	phase_list[phase_id] = [descr, cryst_struct, a, c, V, liste_pics]
 	return phase_list
 
-def calc_d( hkl, a ):
+def calc_d( hkl, a, c = 0, cryst_syst = 'c' ):
 	"""
 
 	Calcule la distance interplanaire du plan (h, k, l), pour une structure cubique ayant un paramètre de maille a.
 
 	Args :
 		hkl : 	Tuple contenant les indices du plan : hkl = (h, k, l)
-		a :	Paramètre de maille
+		a, c :	Paramètres de maille (par défaut c = 0)
+		cryst_syst : Système cristallographique :
+			'c' : Cubique (par défaut)
+			'h' : Hexagonal
 
 	"""	
 	
 	h = hkl[0]
 	k = hkl[1]
 	l = hkl[2]
-	return np.sqrt( a**2 / (h**2 + k**2 + l**2) )
+	
+	if cryst_syst == 'c':
+		return np.sqrt( a**2 / (h**2 + k**2 + l**2) )
+	elif cryst_syst == 'h':
+		return ( 4./3.*(h**2 + h*k + k**2)/a**2 + l**2/c**2 )**(-0.5)
 
 def calc_a( hkl, theta, lam ):
 	"""
@@ -300,6 +332,11 @@ def scatt_f( s, elem = 'Fe' ):
 		a = [11.7695, 7.35730, 3.52220, 2.30450]
 		b = [4.76110, 0.307200, 15.3535, 76.8805]
 		c = 1.03690
+
+	elif elem == 'Cd':
+		a = [19.2214, 17.6444, 4.46100, 1.60290]
+		b = [0.594600, 6.90890, 27.7008, 87.4825]
+		c = 5.06940
 
 	if type(s) == int or type(s) == float or type(s) == np.float64:
 		s_f = c
@@ -358,7 +395,7 @@ def lor_f( theta ):
 	return 1 / (np.sin(theta)**2 * np.cos(theta))
 
 
-def temp_f( s, A = 55.845, T = 293., DebyeT = 430.  ):
+def temp_f( s, elem = 'Fe', A = 55.845, T = 293., DebyeT = 430.  ):
 	"""
 	Fonction calculant le facteur de la température exp(-2*M)  [Cullity]
 
@@ -380,6 +417,13 @@ def temp_f( s, A = 55.845, T = 293., DebyeT = 430.  ):
 	
 
 	"""
+
+	if elem == 'Fe':
+		A = 55.845
+		debyeT = 430
+	elif elem == 'Cd':
+		A = 112.411
+		debyeT = 175 #[https://www.ncnr.nist.gov/equipment/ref.html]
 
 	x = DebyeT / T
 	M = 1.1490292193e4 * T / (A*DebyeT**2) * (phiofx(x) + x/4)*s**2
