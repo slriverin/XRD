@@ -480,12 +480,16 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		affich :	Imprimer les résultats a l'ecran (Bool.)
 
 	Extrants:
-		[mu_m, Z, A, rho, lambda]
+		[mu_m, Z, A, rho, lambda, DebyeT, a, b, c]
 		mu_m : 		Coefficient d'absorption massique (cm2/g)
 		Z : 		Numéro atomique
 		A :		Masse atomique (g/mol)
 		rho :		Densité (g/cm3)
 		lam :		Longueur d'onde du rayonnement incident (Angstrom)
+		DebyeT :	Température de Debye (K)
+		a, b, c :	Coefficients pour le calcul du facteur de diffusion
+			a = [a1, a2, a3, a4]
+			b = [b1, b2, b3, b4]
 
 	"""
 	#Choisit la bonne colonne pour la lecture des informations
@@ -525,6 +529,10 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 				A = float( row[2] )
 				rho = float( row[3] )
 				mu_m = float( row[rowno] )
+				DebyeT = float( row[12] )
+				a = [ float( row[13] ), float( row[14] ), float( row[15] ), float( row[16] ) ]
+				b = [ float( row[17] ), float( row[18] ), float( row[19] ), float( row[20] ) ]
+				c = float( row[21] )
 				mu_l = mu_m*rho
 				if affich == 1 or affich == 2 or affich == 3:
 					print( u'\n----\nÉmetteur :\t\t' + emetteur + ' K-' + raie )
@@ -547,7 +555,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 					plt.legend( )
 					if affich == 2:
 						plt.show()
-				return [mu_m, Z, A, rho, lam]
+				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c]
 
 	print 'Erreur, absorbeur inexistant'		
 
