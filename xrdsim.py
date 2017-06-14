@@ -56,7 +56,6 @@ from scipy.interpolate import interp1d
 from scipy.linalg import solve_triangular, solve
 from scipy.special import wofz
 import copy
-import xrdanal
 import mater
 
 rc('font',**{'family':'serif','serif':['Palatino']})
@@ -161,7 +160,6 @@ class spectre:
 
 
 		with open( file_out + '.py', 'w' ) as f:
-			f.write('import xrdsim\n')
 			f.write('import numpy as np\n')
 			f.write('def read_data():\n')
 			f.write('\tspectre=xrdsim.spectre()\n')

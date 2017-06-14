@@ -24,7 +24,6 @@
 #
 #######################################################################
 
-import xrdsim
 import numpy as np
 from scipy.special import wofz, erfc
 from scipy.optimize import fsolve
