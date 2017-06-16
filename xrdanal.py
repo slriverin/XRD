@@ -32,6 +32,7 @@ import os.path
 import csv
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
+from XRD import xrdsim
 
 def calc_surf( spectre ):
 	if spectre.etat.calcul == False:
@@ -804,7 +805,7 @@ def quant( spectre, liste_phases, affich = 1 ):
 	emetteur = liste_phases['MatBase'][1]
 	raie = liste_phases['MatBase'][2]
 
-	[mu_m, A, rho, lam] = read_melange( mat, emetteur, raie, affich )
+	[mu_m, A, rho, lam, f1, f2] = read_melange( mat, emetteur, raie, affich )
 
 	for i in range( len( spectre.peak_list ) ):
 		phase_id = spectre.peak_list[i][4]

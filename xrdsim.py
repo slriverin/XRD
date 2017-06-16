@@ -57,6 +57,10 @@ from scipy.linalg import solve_triangular, solve
 from scipy.special import wofz
 import copy
 import mater
+this_dir, this_filename = os.path.split( __file__ )
+DATA_PATH = os.path.join( this_dir, "data" )
+import xrdsim
+
 
 rc('font',**{'family':'serif','serif':['Palatino']})
 rc('text', usetex=True)
@@ -161,6 +165,7 @@ class spectre:
 
 		with open( file_out + '.py', 'w' ) as f:
 			f.write('import numpy as np\n')
+			f.wriet('from XRD import xrdsim\n')
 			f.write('def read_data():\n')
 			f.write('\tspectre=xrdsim.spectre()\n')
 			f.write('\tspectre.read(\'' + self.filename + '\')\n')
@@ -203,7 +208,7 @@ class spectre:
 			f.write('\treturn spectre\n')
 
 
-	def find_peaks( self, plot = 0, lbl = '', pct_min_d2 = 0.01, tag = 1 ):
+	def find_peaks( self, plot = 0, lbl = '', pct_min_d2 = 0.01, tag = 0, affich = 1 ):
 		"""
 		Trouve les pics à partir des données brutes
 		Trouve les zéros de la dérivée après plusieurs lissages
@@ -239,6 +244,11 @@ class spectre:
 			print( u'Pas de données brutes' )
 			return
 
+		if len(self.peak_list) > 0:
+			inst = raw_input( u'Liste de pics déjà existante... Sera écrasée... continuer? 1 = oui, autre = non ... : '.encode('cp850') )
+			if inst != '1':
+				return
+
 		data_smooth = lisser_moy( self.raw_data, n = 3 )
 		data_0 = copy.deepcopy( data_smooth )
 		data_0.count = data_0.count**0.5
@@ -265,6 +275,7 @@ class spectre:
 		f_d2 = interp1d( d2_data_smooth.theta, d2_data_smooth.count, bounds_error = False, fill_value = 0 )
 		
 		s = signe( d_data_smooth.count[0] )
+		compteur = 0
 		for i in range( len( d_data_smooth.theta ) - 1 ):
 			s2 = signe( d_data_smooth.count[i + 1] )
 			if s2 != s and f_d2( d_data_smooth.theta[i] ) < seuil:	
@@ -276,12 +287,16 @@ class spectre:
 				
 				existe = False
 				for j in range( len( self.peak_list ) ):
-					if np.abs( self.peak_list[j][2] - theta_peak ) < 0.01:
+					if np.abs( self.peak_list[j][2] - theta_peak ) < 0.1:
 						existe = True
 
 				if existe == False :
+					compteur += 1
 					self.add_peak( theta_peak )
+					if affich == 1:
+						print( 'Pic # ' + str(compteur) + ' :\t' + str(theta_peak)  )
 				existe = True	
+
 			
 			s = s2
 		
@@ -469,7 +484,7 @@ class spectre:
 				theta_peak = self.peak_list[i][2]
 				plt.plot( [theta_peak, theta_peak], [0, f_count(theta_peak) ], color='r' )
 				if tag == 1:
-					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (theta_peak, f_count(theta_peak) ) )
+					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (theta_peak, f_count(theta_peak*0.5) ) )
 				elif tag == 2 :	
 					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{(' + self.peak_list[i][5] + ')}$}', (theta_peak, f_count(theta_peak)))
 
@@ -1010,7 +1025,7 @@ class spectre:
 		trouver la solution à chaque point ainsi que le résidu utilisé dans l'itération suivante.
 		"""
 
-		[mu_m, A, rho, lam] = xrdanal.read_melange( mat, emetteur, raie )
+		[mu_m, A, rho, lam, f1, f2] = xrdanal.read_melange( mat, emetteur, raie )
 		if emetteur == 'Cu' and raie == 'a':
 			lam_1 = 1.540562
 			lam_2 = 1.544390
