@@ -25,6 +25,8 @@
 #######################################################################
 
 import numpy as np
+import matplotlib.pyplot as plt
+import pylab
 from scipy.special import wofz, erfc
 from scipy.optimize import fsolve
 from scipy.integrate import simps
@@ -105,7 +107,7 @@ def calc_surf( spectre ):
 	print( 'Fond moyen\t' + str(round(np.mean(spectre.data_back.count) ) ) )
 
 
-def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a = 0, c = 0, pourc_C = 0, alpha = 13.3*2*np.pi/360, anom_scatt = True, affich = 0 ):
+def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a = 0, c = 0, pourc_C = 0, alpha = 13.3*2*np.pi/360, anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
 	"""
 	Rajoute ou modifie une phase dans la liste des phases disponibles pour l'analyse.
 	Modifie la variable phase_list.
@@ -124,6 +126,10 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			de maille de 3.35 Angstroms.
 		anom_scatt : Application ou non de la correction pour dispersion "anormale".	
 		affich : Mettre à 1 pour imprimer les résultats à l'écran
+		liste_pics : modifie la liste de plans par défaut selon la structure. 
+			Mettre de la forme liste_pics = [ [(h1, k1, l1)], [(h2, k2, l2)] ... ]
+			La liste des facteurs de multiplicité liste_p doit correspondre à liste_pics
+		liste_p : liste des facteurs de multiplicité à spécifié en même temps que liste_pics
 		
 	Autres variables :
 		V = Volume d'une maille (Angstrom^3)
@@ -192,9 +198,10 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		c = 0;
 		V = a**3
 		
-
-		liste_pics = [ [(1, 1, 0)], [(2, 0, 0)], [(2, 1, 1)], [(2, 2, 0)] ]
-		liste_p = [12, 6, 24, 12]
+		if liste_pics == []:
+			liste_pics = [ [(1, 1, 0)], [(2, 0, 0)], [(2, 1, 1)], [(2, 2, 0)] ]
+		if liste_p == []:
+			liste_p = [12, 6, 24, 12]
 
 		for i in range(len(liste_pics)):
 			d = calc_d( liste_pics[i][0], a )
@@ -225,8 +232,10 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		c = 0;
 		V = a**3
 
-		liste_pics =  [ [(1, 1, 1)], [(2, 0, 0)], [(2, 2, 0)], [(3, 1, 1)], [(2, 2, 2)] ]
-		liste_p = [8, 6, 12, 24, 8]
+		if liste_pics == []:
+			liste_pics =  [ [(1, 1, 1)], [(2, 0, 0)], [(2, 2, 0)], [(3, 1, 1)], [(2, 2, 2)], [(3, 3, 1)], [(4, 2, 2)] ]
+		if liste_p == []:
+			liste_p = [8, 6, 12, 24, 8, 24, 24]
 
 		for i in range(len(liste_pics)):
 			d = calc_d( liste_pics[i][0], a )
@@ -251,16 +260,19 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 	elif cryst_struct == 'HCP':
 		V = 3**0.5*a**2*c/2
 
-		liste_pics = [  [(0, 0, 2)], [(1, 0, 0)], [(1, 0, 1)], [(1, 0, 2)], [(1, 0, 3)], [(1, 1, 0)], 
-				[(0, 0, 4)], [(1, 1, 2)], [(2, 0, 0)], [(2, 0, 1)], [(1, 0, 4)], [(2, 0, 2)],
-				[(2, 0, 3)], [(1, 0, 5)], [(1, 1, 4)], [(2, 1, 0)], [(2, 1, 1)], [(2, 0, 4)],
-				[(0, 0, 6)], [(2, 1, 2)], [(1, 0, 6)], [(2, 1, 3)], [(3, 0, 0)], [(2, 0, 5)],
-				[(3, 0, 2)], [(2, 1, 4)] ]
-		liste_p = [	2, 6, 12, 12, 12, 6,
-				2, 12, 6, 12, 12, 12,
-				12, 12, 12, 12, 24, 12,
-				2, 24, 12, 24, 6, 12,
-				12, 24 			] 
+		if liste_pics == []:
+			liste_pics = [  [(0, 0, 2)], [(1, 0, 0)], [(1, 0, 1)], [(1, 0, 2)], [(1, 0, 3)], [(1, 1, 0)], 
+					[(0, 0, 4)], [(1, 1, 2)], [(2, 0, 0)], [(2, 0, 1)], [(1, 0, 4)], [(2, 0, 2)],
+					[(2, 0, 3)], [(1, 0, 5)], [(1, 1, 4)], [(2, 1, 0)], [(2, 1, 1)], [(2, 0, 4)],
+					[(0, 0, 6)], [(2, 1, 2)], [(1, 0, 6)], [(2, 1, 3)], [(3, 0, 0)], [(2, 0, 5)],
+					[(3, 0, 2)], [(2, 1, 4)] ]
+
+		if liste_p == []:	
+			liste_p = [	2, 6, 12, 12, 12, 6,
+					2, 12, 6, 12, 12, 12,
+					12, 12, 12, 12, 24, 12,
+					2, 24, 12, 24, 6, 12,
+					12, 24 			] 
 
 		for i in range( len(liste_pics) ):
 			(h, k, l) = liste_pics[i][0]
@@ -288,6 +300,59 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 
 	phase_list[phase_id] = [descr, cryst_struct, a, c, V, liste_pics]
 	return phase_list
+
+def plot_phase( phase, dict_phases, raw_data = [], couleur = 'blue', theta_min = 20, theta_max = 120 ):
+	"""
+
+	Trace les pics de une ou plusieurs phases dans une liste de phase
+	Peut comparer ces pics avec les données brutes du spectre.
+
+	Args :
+		phase : Identificateur de phase, ou liste d'identificateurs de phase (phase_id) à retrouver dans la liste des phases
+		dict_phases : Liste des phases
+		raw_data (optionnel) : Structure xrdsim.data contenant les données brutes à tracer
+		couleur (optionnel) : couleur des pics à tracer pour la phase 'phase'. Utilisé principalement lors de la récursion
+		theta_min, theta_max : Minimum et maximum d'affichage des pics. Si des données brutes sont données, ces valeurs seront 
+			écrasées par les limites du spectre.
+
+	"""
+
+	plt.ion()
+
+	if raw_data != [] :
+		plt.plot(raw_data.theta, raw_data.count/max(raw_data.count), color = 'black', label = r'Donn\'{e}s brutes' )
+		theta_min = min(raw_data.theta)
+		theta_max = max(raw_data.theta)
+
+	plt.axis([theta_min, theta_max, 0, 1.1])
+
+	if type( phase ) == list:
+		cm = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'] 
+		for i in range( len( phase ) ):
+			plot_phase( phase[i], dict_phases, couleur = cm[i], theta_min = theta_min, theta_max = theta_max )
+
+		return	
+
+	phase_data = dict_phases[ phase ]
+
+	R_max = 0
+	for i in range( len( phase_data[5] ) ):
+		R = phase_data[5][i][8]
+		if R > R_max:
+			R_max = R
+	
+	for i in range( len( phase_data[5] ) ):
+		angle_2theta = 2*phase_data[5][i][3] * 360. / (2.*np.pi)
+		if raw_data != [] and ( angle_2theta > theta_max or angle_2theta < theta_min ):
+			continue
+		R = phase_data[5][i][8] / R_max
+		plt.plot([angle_2theta, angle_2theta], [0, R], color = couleur)
+		plt.annotate( str( phase_data[5][i][0] ), [angle_2theta, 0.5 * R] )
+
+	plt.plot( [], [], color = couleur, label = phase )
+	plt.legend()
+
+
 
 def calc_d( hkl, a, c = 0, cryst_syst = 'c' ):
 	"""
