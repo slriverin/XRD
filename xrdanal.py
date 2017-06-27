@@ -41,13 +41,15 @@ def calc_surf( spectre ):
 		print( u'Compléter la simulation d\'abord' )
 		return
 
-	print( u'Pic #\tPhase\tPlan\t\t2-theta\tI\tA\tFWHM\tForm Fact  P/B\t    P/N' )
+	print( u'Pic #\tPhase\tPlan\t2-theta\tI\tA\tFWHM\tForm Fact  P/B\t    P/N' )
 		
 	surf_phase = {}
 	surf_tot_PSF = 0
 
 	for i in range( len( spectre.peak_list ) ):
 		pic_index = spectre.peak_list[i][0]
+		if len( spectre.peak_list[i][1] ) == 0:
+			continue	
 		PSF = spectre.peak_list[i][1][0]
 		phase = spectre.peak_list[i][4]
 		plan = spectre.peak_list[i][5]
@@ -90,7 +92,7 @@ def calc_surf( spectre ):
 		
 		PB = 1 + I / np.mean(spectre.data_back.count)
 		PN = 1 + I / spectre.fit.noise
-		print( str(pic_index) + '\t' + phase + '\t' + str(plan) + '\t' + str(round(th0,3)) + '\t' + str(round(I,0)) + '\t' + str(round(A,0)) + '\t' + str(round(FWHM,3)) + '\t' + str(round(f_fact,5)) + '\t   ' + "%-5.3g" % PB + '\t' + "%-5.3g" % PN )
+		print( str(pic_index) + '\t' + phase + '\t' + str(plan) + '\t' + str(round(th0,3)) + '\t' + str(round(I,1)) + '\t' + str(round(A,2)) + '\t' + str(round(FWHM,3)) + '\t' + str(round(f_fact,5)) + '\t   ' + "%-5.3g" % PB + '\t' + "%-5.3g" % PN )
 	
 	surf_tot_back = simps( spectre.data_back.count, spectre.data_back.theta )
 	

@@ -50,7 +50,7 @@ import csv
 import numpy as np
 from matplotlib import rc
 import matplotlib.pyplot as plt
-import os.path
+import sys, os.path
 from scipy.optimize import fsolve
 from scipy.interpolate import interp1d
 from scipy.linalg import solve_triangular, solve
@@ -59,7 +59,9 @@ import copy
 import mater
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
-import xrdsim
+if this_dir not in sys.path:
+	sys.path.insert(0, this_dir)
+import xrdanal
 
 
 rc('font',**{'family':'serif','serif':['Palatino']})
@@ -165,7 +167,7 @@ class spectre:
 
 		with open( file_out + '.py', 'w' ) as f:
 			f.write('import numpy as np\n')
-			f.wriet('from XRD import xrdsim\n')
+			f.write('from XRD import xrdsim\n')
 			f.write('def read_data():\n')
 			f.write('\tspectre=xrdsim.spectre()\n')
 			f.write('\tspectre.read(\'' + self.filename + '\')\n')
@@ -310,10 +312,12 @@ class spectre:
 		if plot == 1:
 			self.trace_peak()
 			
-	def tag_peaks( self ):
+	def tag_peaks( self, plot=1 ):
 						
-		plt.ion()
-		self.trace_peak()
+		if plot == 1:
+			plt.ion()
+			self.trace_peak()
+
 		print( u'Pic #\ttheta\tPhase\tPlan' )
 		liste_del = []
 		for i in range( len( self.peak_list ) ):
@@ -484,7 +488,7 @@ class spectre:
 				theta_peak = self.peak_list[i][2]
 				plt.plot( [theta_peak, theta_peak], [0, f_count(theta_peak) ], color='r' )
 				if tag == 1:
-					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (theta_peak, f_count(theta_peak*0.5) ) )
+					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (theta_peak, f_count(theta_peak)*0.5 ) )
 				elif tag == 2 :	
 					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{(' + self.peak_list[i][5] + ')}$}', (theta_peak, f_count(theta_peak)))
 
@@ -695,7 +699,7 @@ class spectre:
 		phase_id = self.peak_list[pic_index][4]
 		hkl = self.peak_list[pic_index][5]
 
-		[mu_m, A, rho, lam] = xrdanal.read_melange( mat, emetteur, raie )
+		[mu_m, A, rho, lam, f1, f2] = xrdanal.read_melange( mat, emetteur, raie )
 	
 		if emetteur == 'Cu' and raie == 'a':
 			lam_1 = 1.540562
