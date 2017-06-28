@@ -321,7 +321,7 @@ class spectre:
 		print( u'Pic #\ttheta\tPhase\tPlan' )
 		liste_del = []
 		for i in range( len( self.peak_list ) ):
-			print( str(self.peak_list[i][0]) + '\t' + str(np.round( self.peak_list[i][2])) + '\t' + self.peak_list[i][4] + '\t' + str(self.peak_list[i][5]) )
+			print( str(self.peak_list[i][0]) + '\t' + str(np.round( self.peak_list[i][2], 3)) + '\t' + self.peak_list[i][4] + '\t' + str(self.peak_list[i][5]) )
 			instruction = raw_input( '<d> pour effacer, <m> pour modifier, autre touche pour conserver tel quel ... : ' )
 			if instruction == 'd':
 				liste_del.append( self.peak_list[i][0] )
@@ -532,6 +532,8 @@ class spectre:
 			Pour PSF = 'v', ces 5 paramètres sont optimisés
 			Pour PSF = 'v2', on optimise 4 paramètres en posant I0g = I0l = I0lg
 			Pour PSF = 'v2k', on modélise la séparation des pics K-alpha1 et K-alpha2. Traité de la même façon que 'v2' dans
+				Si 'v2k' est sélectionnée, on considère que le ratio d'intensités alpha2/alpha1 est par défaut 0.4457.
+				Si l'utilisateur veut un autre ratio, il doit entrer par exemple : 'v2k:0.5' pour un ratio de 0.5
 			fit_approx, mais le traitement est différent dans fit_calcul et dans iter.
 
 
@@ -553,7 +555,7 @@ class spectre:
 			print 'Impossible de faire la régression, liste de pics manquante'
 			return
 
-		if not( PSF == 'g' or PSF =='l' or PSF == 'v' or PSF == 'v2' or PSF == 'v2k' ):
+		if not( PSF == 'g' or PSF =='l' or PSF == 'v' or PSF == 'v2' or PSF[0:3] == 'v2k' ):
 			print( u'Veuillez entrer une fonction de régression valide' )
 			return
 
@@ -647,7 +649,7 @@ class spectre:
 				I0g = (I / (beta_l * wofz( 1j*k )).real)**0.5
 				I0l = I0g
 
-			elif PSF == 'v2' or PSF == 'v2k':
+			elif PSF == 'v2' or PSF[0:3] == 'v2k':
 				k = 1/np.pi**0.5
 				beta_g = ( FWHM**2*np.pi / (4.*(1.+k**2)) )**0.5
 				beta_l = k * beta_g * np.pi**0.5
@@ -656,7 +658,7 @@ class spectre:
 
 			if PSF == 'v':
 				self.peak_list[i][1] = [PSF, I0g, I0l, th0, beta_g, beta_l]
-			elif PSF == 'v2' or PSF == 'v2k':
+			elif PSF == 'v2' or PSF[0:3] == 'v2k':
 				self.peak_list[i][1] = [PSF, I0lg, th0, beta_g, beta_l]
 			else:	
 				self.peak_list[i][1] = [PSF, I, th0, c]
@@ -693,7 +695,7 @@ class spectre:
 
 		for i in range( len( self.peak_list ) ):
 			if self.peak_list[i][0] == no_seq:
-				pic_index = no_seq
+				pic_index = i
 
 		PSF = self.peak_list[pic_index][1][0]
 		phase_id = self.peak_list[pic_index][4]
@@ -706,7 +708,7 @@ class spectre:
 			lam_2 = 1.544390
 
 		
-		if PSF == 'v2k':
+		if PSF[0:3] == 'v2k':
 			I0lg = self.peak_list[pic_index][1][1]
 			t0 =  self.peak_list[pic_index][1][2]
 			beta_g = self.peak_list[pic_index][1][3]
@@ -714,16 +716,21 @@ class spectre:
 			k = beta_l / (beta_g*np.pi**0.5)
 			f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k )).real
 
+			if len(PSF) > 3:
+				ratio_alph = float( PSF[4:] )
+			else:
+				ratio_alph = 0.4457
+
 		d = lam / ( 2*np.sin( t0/2. * 2.*np.pi/360. ) )
 
 		#Pic k-alpha1 :
 		t1 = 2.*360*np.arcsin( lam_1 / (2*d) )/(2.*np.pi)
-		I0_1 = 0.8317 * I0lg
+		I0_1 = (1 / (1+ratio_alph))**0.5 * I0lg
 		f1 = lambda x: ( beta_l*I0_1**2*wofz( np.pi**0.5*(x-t1)/beta_g + 1j*k )).real
 
 		#Pic k-alpha2 :
 		t2 = 2.*360*np.arcsin( lam_2 / (2*d) )/(2.*np.pi)
-		I0_2 = 0.5552 * I0lg
+		I0_2 = (ratio_alph / (1+ratio_alph))**0.5 * I0lg
 		f2 = lambda x: ( beta_l*I0_2**2*wofz( np.pi**0.5*(x-t2)/beta_g + 1j*k )).real
 		
 		if plot == 1:
@@ -827,18 +834,18 @@ class spectre:
 				k = beta_l / (beta_g*np.pi**0.5)
 				f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k )).real
 
-			elif PSF == 'v2k':
+			elif PSF[0:3] == 'v2k':
 				
 				[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
 
 			if plotPSF == 1 and plot == 1:
-				if PSF == 'v2k':
+				if PSF[0:3] == 'v2k':
 					axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta ), color = 'y' )
 					axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta ), color = 'y' )
 				else:	
 					axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta ), color = 'y' )
 
-			if PSF == 'v2k':
+			if PSF[0:3] == 'v2k':
 				self.fit.data_reg.count += f1( self.fit.data_reg.theta )
 				self.fit.data_reg.count += f2( self.fit.data_reg.theta )
 			else:
@@ -1054,7 +1061,7 @@ class spectre:
 					list_args[J_index + 3] = 'p' + str(self.peak_list[i][0]) + '4'
 					list_args[J_index + 4] = 'p' + str(self.peak_list[i][0]) + '5'
 					J_index += 5
-				elif self.peak_list[i][1][0] == 'v2' or self.peak_list[i][1][0] == 'v2k':
+				elif self.peak_list[i][1][0] == 'v2' or self.peak_list[i][1][0][0:3] == 'v2k':
 					list_args[J_index] = 'p' + str(self.peak_list[i][0]) + '1'
 					list_args[J_index + 1] = 'p' + str(self.peak_list[i][0]) + '2'
 					list_args[J_index + 2] = 'p' + str(self.peak_list[i][0]) + '3'
@@ -1161,7 +1168,12 @@ class spectre:
 								elif arg == 4:
 									J[i, j] = I/beta_l + beta_l*I0lg**2*( dwdz*1j/(beta_g*np.pi**0.5) ).real
 
-							elif PSF == 'v2k':
+							elif PSF[0:3] == 'v2k':
+								if len(PSF) > 3:
+									ratio_alph = float( PSF[4:] )
+								else:
+									ratio_alph = 0.4457
+								
 								I0lg = self.peak_list[pic_index][1][1]
 								th0 = self.peak_list[pic_index][1][2]
 								beta_g = self.peak_list[pic_index][1][3]
@@ -1175,8 +1187,8 @@ class spectre:
 								z1 = np.pi**0.5*(th - th0 - 0.2*delta_th)/beta_g + 1j*k_voigt
 								z2 = np.pi**0.5*(th - th0 + 0.8*delta_th)/beta_g + 1j*k_voigt
 
-								I1 = 0.6917*beta_l*I0lg**2*wofz(z1).real
-								I2 = 0.3083*beta_l*I0lg**2*wofz(z2).real
+								I1 = 1./(1+ratio_alph)*beta_l*I0lg**2*wofz(z1).real
+								I2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*wofz(z2).real
 								I = I1 + I2
 
 								dwdz1 = -2*z1*wofz(z1) + 2j/np.pi**0.5
@@ -1191,13 +1203,13 @@ class spectre:
 									J2 = (1 - 2*lam_2/5/(1-lam_2**2/4/d**2)**0.5 + 2*lam_1/5/(1-lam_1**2/4/d**2)**0.5)
 									J[i, j] = fact1*fact2*( 0.6917 * J1 * dwdz1.real + 0.3083 * J2 * dwdz2.real )
 								elif arg == 3:	
-									J1 = 0.6917*beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
-									J2 = 0.3083*beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
+									J1 = 1./(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
+									J2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
 									J[i, j] = J1 + J2
 
 								elif arg == 4:
-									J1 = 0.6917*beta_l*I0lg**2*( dwdz1*1j/(beta_g*np.pi**0.5) ).real
-									J2 = 0.3083*beta_l*I0lg**2*( dwdz2*1j/(beta_g*np.pi**0.5) ).real
+									J1 = 1./(1 + ratio_alph)*beta_l*I0lg**2*( dwdz1*1j/(beta_g*np.pi**0.5) ).real
+									J2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*( dwdz2*1j/(beta_g*np.pi**0.5) ).real
 									J[i, j] = I/beta_l + J1 + J2
 
 						elif cle[0] == 'b':
@@ -1238,8 +1250,10 @@ class spectre:
 					L = np.linalg.cholesky( JtJ )
 					y = solve_triangular( L, JtR, lower=True )
 					delta_beta = solve_triangular( np.transpose(L), y )
+
 				except KeyboardInterrupt:
 					raise KeyboardInterrupt
+
 				except:
 					print( 'Erreur, divergence' )
 					erreur = 1
