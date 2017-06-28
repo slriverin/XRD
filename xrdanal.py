@@ -193,7 +193,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		f1 = 0
 		f2 = 0
 
-	if cryst_struct == 'BCC':
+	if cryst_struct == 'BCC':	#Cubique centré
 		if a == 0 :
 			a = 2.872 #Par défaut, on attribue la valeur usuelle du paramètre de maille du fer alpha
 		
@@ -226,9 +226,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append(Tf)
 			liste_pics[i].append(R)
 		
-
-
-	elif cryst_struct == 'FCC':
+	elif cryst_struct == 'FCC': 	#Cubique face centrée
 		if a == 0:
 			a = 3.555 + 0.044*pourc_C
 		c = 0;
@@ -259,7 +257,47 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append(Tf)
 			liste_pics[i].append(R)
 
-	elif cryst_struct == 'HCP':
+	elif cryst_struct == 'DC':	#Diamond Cubic
+		if a == 0:
+			a = 5.4309	#Silicium selon CIF 27-1402
+		c = 0;
+		V = a**3
+
+		if liste_pics == []:
+			liste_pics =  [ [(1, 1, 1)], [(2, 2, 0)], [(3, 1, 1)], [(4, 0, 0)], [(3, 3, 1)], 
+					[(4, 2, 2)], [(5, 1, 1)], [(4, 4, 0)], [(5, 3, 1)], [(6, 2, 0)],
+					[(5, 3, 3)] ]
+		if liste_p == []:
+			liste_p = [	8, 12, 24, 6, 24,
+					24, 24, 12, 48, 24,
+					24 ]
+
+		for i in range(len(liste_pics)):
+			(h, k, l) = liste_pics[i][0]
+			d = calc_d( liste_pics[i][0], a )
+			theta = np.arcsin( lam / (2*d) )
+			s = np.sin(theta) / lam
+			sF = scatt_f( s ) + f1 + 1j*f2
+			if (h + k + l) % 2 == 0:	#Somme des indices paire
+				FFmult = 64
+			else:
+				FFmult = 32
+			FF = FFmult*(sF*np.conj(sF)).real
+			p = liste_p[i]
+			Lf = lor_f( theta )
+			pf = pol_f( theta, alpha )
+			Tf = temp_f( s )
+			R = 1./V**2 * FF*p*Lf*pf*Tf
+			liste_pics[i].append(p)
+			liste_pics[i].append(d)
+			liste_pics[i].append(theta)
+			liste_pics[i].append(FF)
+			liste_pics[i].append(Lf)
+			liste_pics[i].append(pf)
+			liste_pics[i].append(Tf)
+			liste_pics[i].append(R)
+
+	elif cryst_struct == 'HCP':	#Hexagonal compact
 		V = 3**0.5*a**2*c/2
 
 		if liste_pics == []:
@@ -283,7 +321,6 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			s = np.sin(theta) / lam
 			sF = scatt_f( s ) + f1 + 1j*f2
 			FF = 4 * (sF*np.conj(sF)).real * (np.cos( np.pi*( (h+2*k)/3.+l/2.) ) )**2
-			
 			p = liste_p[i]
 			Lf = lor_f( theta )
 			pf = pol_f( theta, alpha )
