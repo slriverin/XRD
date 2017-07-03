@@ -34,7 +34,7 @@ import os.path
 import csv
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
-from XRD import xrdsim
+import xrdsim
 
 def calc_surf( spectre ):
 	if spectre.etat.calcul == False:
@@ -657,6 +657,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 
 	if not os.path.exists( os.path.join( DATA_PATH, 'Coeff_abs.csv' ) ):
 		print( u'Erreur, fichier de données introuvable' )
+		print DATA_PATH
 		return
 
 	with open( os.path.join( DATA_PATH, 'Coeff_abs.csv' ), 'rb' ) as csvfile:

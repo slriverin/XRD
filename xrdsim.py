@@ -701,7 +701,7 @@ class spectre:
 		phase_id = self.peak_list[pic_index][4]
 		hkl = self.peak_list[pic_index][5]
 
-		[mu_m, A, rho, lam, f1, f2] = xrdanal.read_melange( mat, emetteur, raie )
+		[mu_m, A, rho, lam, f_1, f_2] = xrdanal.read_melange( mat, emetteur, raie )
 	
 		if emetteur == 'Cu' and raie == 'a':
 			lam_1 = 1.540562
@@ -1047,7 +1047,6 @@ class spectre:
 		
 		self.fit_calcul()
 
-		n = len( self.raw_data.theta )
 		
 		#Construit le dictionnaire reliant la colonne du Jacobien avec le bon paramètre
 		list_args = {}
@@ -1079,7 +1078,6 @@ class spectre:
 				J_index += 1
 		
 		m = len( list_args )
-		J = np.zeros( (n, m) )
 
 		k = 0	#Compteur d'itérations
 		erreur = 0
@@ -1091,6 +1089,65 @@ class spectre:
 		#Boucle principale de calcul
 		try:
 			while (k < nit or nit == 0):
+
+				#Construit le vecteur fct_reg, contenant la somme des valeurs des fonctions de régression des pics actifs
+				fct_reg = np.zeros( len(self.raw_data.theta) )
+				for i in range( len( self.peak_list ) ):
+					if len( self.peak_list[i][1] ) == 0 or self.peak_list[i][3] == False:
+						continue
+
+					PSF = self.peak_list[i][1][0]
+					I = self.peak_list[i][1][1]
+					th0 = self.peak_list[i][1][2]
+					c = self.peak_list[i][1][3]
+					
+					if PSF == 'g':
+						f = lambda x: I*np.exp( -(x - th0)**2/(2*c**2) )
+
+					elif PSF == 'l':
+						f = lambda x: I*c**2 / (c**2 + (x - th0)**2)
+
+					elif PSF == 'li':
+						f = lambda x: I*np.sqrt(4.*(2.**1.5-1.)) / (2.*np.pi*c) * (1. + 4.*(2.**(2./3.)-1.) / c**2. * (x - th0)**2.)**(-1.5)
+
+					elif PSF == 'v':
+						I0g = self.peak_list[i][1][1]
+						I0l = self.peak_list[i][1][2]
+						t0 =  self.peak_list[i][1][3]
+						beta_g = self.peak_list[i][1][4]
+						beta_l = self.peak_list[i][1][5]
+						k_voigt = beta_l / (beta_g*np.pi**0.5)
+						f = lambda x: ( beta_l*I0l*I0g*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k_voigt )).real
+
+					elif PSF == 'v2':
+						I0lg = self.peak_list[i][1][1]
+						t0 =  self.peak_list[i][1][2]
+						beta_g = self.peak_list[i][1][3]
+						beta_l = self.peak_list[i][1][4]
+						k_voigt = beta_l / (beta_g*np.pi**0.5)
+						f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k_voigt)).real
+
+					elif PSF[0:3] == 'v2k':
+						
+						[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+
+					if PSF[0:3] == 'v2k':
+						fct_reg += f1( self.fit.data_reg.theta )
+						fct_reg += f2( self.fit.data_reg.theta )
+					else:
+						fct_reg += f( self.fit.data_reg.theta )
+				
+				#Construit le vecteur list_index, contenant les index du vecteur self.raw_data.theta qui sont inclus dans le calcul
+				list_index = []
+				for i in range( len( self.raw_data.theta) ):
+					if fct_reg[i] > 0.1*self.data_back.count[i] or modback == True:
+						list_index.append(i)
+
+				#Détermine le nombre de rangées de la matrice jacobienne
+				n = len( list_index )		
+				print n
+				J = np.zeros( (n, m) )
+
 				#Constitution de la matrice jacobienne à l'aide des dérivées partielles des PSF
 				for i in range( n ):
 					for j in range( m ):
@@ -1098,7 +1155,7 @@ class spectre:
 
 						if cle[0] == 'p':
 							#L'argument est un pic
-							th = self.raw_data.theta[i]
+							th = self.raw_data.theta[list_index[i]]
 							pic = int(cle[1:-1])
 							arg = int(cle[-1])
 							for l in range( len( self.peak_list ) ):
@@ -1216,7 +1273,7 @@ class spectre:
 							#L'argument est un point de bruit de fond
 							pt_no = int( cle[1:] )
 							th_j = self.back_pts_list[pt_no][0]
-							th = self.raw_data.theta[i]
+							th = self.raw_data.theta[list_index[i]]
 							
 							if pt_no == 0:
 								th_j_plus = self.back_pts_list[pt_no+1][0]
@@ -1240,11 +1297,16 @@ class spectre:
 								else:
 									J[i, j] = 0
 
-			
+				#Constitue le vecteur des résidus à partir du vecteur list_index
+				residu = np.zeros(n)
+				for i in range( n ):
+					residu[i] = self.fit.residu.count[list_index[i]]
+
+
 				#Calcul de la matrice des coefficients (JtJ) et du vecteur des solutions (JtR)
 				Jt = np.transpose( J )
 				JtJ = np.matmul( Jt, J ) + gamma * np.eye( m )
-				JtR = np.matmul( Jt, self.fit.residu.count )
+				JtR = np.matmul( Jt, residu )
 				try:
 					#Factorisation de Cholesky et résolution du système linéaire
 					L = np.linalg.cholesky( JtJ )
