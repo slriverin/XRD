@@ -861,7 +861,7 @@ class spectre:
 		for i in range( len( self.fit.data_reg.theta ) ):
 			i_obs = self.raw_data.count[i]
 			i_calc = self.fit.data_reg.count[i]
-			w = 1./i_obs
+			w = 1./max(i_obs, 1)
 			res = i_obs - i_calc
 
 			self.fit.residu.count[i] = res
@@ -1083,8 +1083,8 @@ class spectre:
 		erreur = 0
 		
 		if track == 1:
-			print('It.\tR\t\tdelta_beta/beta')
-			print('0\t' + str( self.fit.R ) )
+			print('It.\tR\tR_wp\tlogres\tn')
+			print('0\t' + str( round(self.fit.R,2) ) + '\t' + str( round(self.fit.R_wp, 2) ) )
 		
 		#Boucle principale de calcul
 		try:
@@ -1145,7 +1145,6 @@ class spectre:
 
 				#Détermine le nombre de rangées de la matrice jacobienne
 				n = len( list_index )		
-				print n
 				J = np.zeros( (n, m) )
 
 				#Constitution de la matrice jacobienne à l'aide des dérivées partielles des PSF
@@ -1360,7 +1359,7 @@ class spectre:
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )
 				self.fit.delta_vec = np.append( self.fit.delta_vec, crit2 )
 				if track == 1:
-					print(str(k) + '\t' + str(self.fit.R) + '\t' + str(crit2) )
+					print(str(k) + '\t' + str(round(self.fit.R, 2)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) )
 
 				#Test de convergence du paramètre logres
 				if logres != 0 and crit2 < 10**logres:
