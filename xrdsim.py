@@ -171,6 +171,7 @@ class spectre:
 			f.write('def read_data():\n')
 			f.write('\tspectre=xrdsim.spectre()\n')
 			f.write('\tspectre.read(\'' + self.filename + '\')\n')
+			f.write('\tspectre.data_smooth = xrdsim.lisser_moy( spectre.raw_data, n=3 )\n')
 			if self.etat.peak_list == True:
 				f.write('\tspectre.etat.peak_list = True\n')
 				f.write('\tspectre.etat.reg = ' + str(self.etat.reg) + '\n')
@@ -666,6 +667,7 @@ class spectre:
 			self.peak_list[i][3] = True
 		
 		self.etat.reg = True
+		self.clean_back_pts()
 
 
 	def split_Kalpha( self, no_seq, mat = mater.mat4340, emetteur = 'Cu', raie = 'a', plot = 0 ):
@@ -943,6 +945,7 @@ class spectre:
 
 		self.back_pts_list.append( [self.data_smooth.theta[-1], float( f_count(self.data_smooth.theta[-1]) ) ] )
 		self.etat.back_list = True
+		self.clean_back_pts()
 
 		if plot == 1 or plot ==2:
 			plt.plot( self.raw_data.theta, self.raw_data.count, label = r'Donn\'{e}es brutes' )
@@ -978,6 +981,7 @@ class spectre:
 			print( u'Établir la liste des pics en premier' )
 			return
 		
+		self.clean_back_pts()
 		self.data_back = data()
 
 
@@ -1003,6 +1007,31 @@ class spectre:
 		if plot == 3:
 			plt.plot( self.data_back.theta, self.data_back.count )
 			plt.show()
+
+	def clean_back_pts( self ):
+		
+		if self.etat.back_list == False or self.etat.reg == False:
+			return
+
+		liste_trash = []
+		for i in range( len( self.back_pts_list ) ):
+			for j in range( len( self.peak_list ) ):
+				if self.peak_list[j][1] == []:
+					continue
+
+				PSF = self.peak_list[j][1][0]
+
+				if PSF == 'g' or PSF == 'l' or PSF == 'li' or PSF[0:2] == 'v2':
+					th0_pic = self.peak_list[j][1][2]
+				elif PSF == 'v':
+					th0_pic = self.peak_list[j][1][3]
+
+				if np.abs(th0_pic - self.back_pts_list[i][0]) < 1:
+					liste_trash.append(i)
+					break
+		
+		for index in sorted( liste_trash, reverse=True ):
+			del self.back_pts_list[index]
 
 	def iter( self, nit = 10, logres = 0, alpha = 1, alpha_back = 1, gamma = 0, plot = 0, track = 1, modback = False, ret_J = False, emetteur = 'Cu', raie = 'a', mat = mater.mat4340 ):
 		"""
