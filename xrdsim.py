@@ -94,6 +94,7 @@ class spectre:
 		self.fit = fit_donnees()
 		self.fit.delta_vec = np.array([])
 		self.fit.R_vec = np.array([])
+		self.fit.corr_LP = False
 		self.etat = etat_cl()
 
 	def read( self, filename = '', plot = 0, write = 0 ):
@@ -172,6 +173,7 @@ class spectre:
 			f.write('\tspectre=xrdsim.spectre()\n')
 			f.write('\tspectre.read(\'' + self.filename + '\')\n')
 			f.write('\tspectre.data_smooth = xrdsim.lisser_moy( spectre.raw_data, n=3 )\n')
+			f.write('\tspectre.fit.corr_LP = ' + str(self.fit.corr_LP) + '\n')
 			if self.etat.peak_list == True:
 				f.write('\tspectre.etat.peak_list = True\n')
 				f.write('\tspectre.etat.reg = ' + str(self.etat.reg) + '\n')
@@ -232,6 +234,8 @@ class spectre:
 
 			pct_min_d2 : 
 				Pourcentage de la valeur de la dérivée seconde maximale utilisé comme seuil pour discriminer les faux pics
+			
+			affich : Mettre à 1 pour afficher la liste des pics obtenus
 		
 		Lorsque le pic est trouvé, il est rajouté à self.peak_list avec la fonction self.add_peak
 
@@ -314,7 +318,18 @@ class spectre:
 			self.trace_peak()
 			
 	def tag_peaks( self, plot=1 ):
-						
+		"""
+		
+		Fonction demandant à l'utilisateur d'identifier les données cristallographiques des pics observés.
+
+		Args :
+			plot : mettre à 1 pour montrer simultanément le spectre avec pics identifiés selon leur numéro séquentiel.
+
+		Met à jour self.peak_list
+
+		"""
+
+
 		if plot == 1:
 			plt.ion()
 			self.trace_peak()
@@ -347,6 +362,8 @@ class spectre:
 			theta : Position du pic à rajouter
 			plot : Mettre à 1 pour afficher le résultat avec la fonction self.trace_peak
 			phase, plan : données cristallographiques
+
+		Met self.peak_list à jour
 
 		self.peak_list est une liste dont les éléments sont des listes de la forme : [no_seq, reg=[], theta, actif=True, phase, plan] où :
 			no_seq : numéro unique attribué à un pic
@@ -504,7 +521,7 @@ class spectre:
 
 	
 
-	def fit_approx( self, plot = 0, mode = 1, liste_pics = [], PSF = 'v2', FWHM_appr = 0., I_appr = 0. ):
+	def fit_approx( self, plot = 0, mode = 1, liste_pics = [], PSF = 'v2', FWHM_appr = 0., I_appr = 0., corr_LP = False ):
 		"""
 		À partir de la liste des pics enregistrés, fait une première approximation des pics avec des fonctions de rég.
 
@@ -587,12 +604,12 @@ class spectre:
 					break
 			
 			peak_index = j
+			th0 = self.data_smooth.theta[peak_index]
 			I = self.data_smooth.count[peak_index]
 			if self.etat.back == True:
 				I -= self.data_back.count[peak_index]
 
 			I_max = max( I, I_max )
-			th0 = self.data_smooth.theta[peak_index]
 			
 			#Trouve FWHM en trouvant le point où I est la moitié du sommet
 			if self.etat.back == False:	
@@ -632,6 +649,10 @@ class spectre:
 				FWHM = FWHM_appr
 				I = I_appr
 
+			if corr_LP == True:
+				th_b_rad = th0*np.pi/360.
+				LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+				I = I/LP
 
 			if plot == 3:
 				plt.plot( [th0 - FWHM/2, th0 + FWHM/2], [a/2, a/2] )
@@ -667,6 +688,7 @@ class spectre:
 			self.peak_list[i][3] = True
 		
 		self.etat.reg = True
+		self.fit.corr_LP = corr_LP
 		self.clean_back_pts()
 
 
@@ -777,6 +799,9 @@ class spectre:
 		if self.etat.reg == False:
 			print( u'Aucune régression' )
 			return
+		
+		if self.fit.corr_LP == True:
+			LP_vec = xrdanal.lor_f( self.raw_data.theta*np.pi/360. ) * xrdanal.pol_f( self.raw_data.theta*np.pi/360. )
 
 		self.fit.data_reg = data()
 		self.fit.data_reg.theta = copy.deepcopy( self.raw_data.theta )
@@ -795,7 +820,11 @@ class spectre:
 		if self.etat.back == True:
 			self.fit.data_reg.count = copy.deepcopy( self.data_back.count )
 			if plotPSF == 1 and plot == 1:
-				axarr[0].plot( self.data_back.theta, self.data_back.count, color = 'c', label = 'Bruit de fond' )
+				if self.fit.corr_LP == False:
+					axarr[0].plot( self.data_back.theta, self.data_back.count, color = 'c', label = 'Bruit de fond' )
+				else:
+					axarr[0].plot( self.data_back.theta, self.data_back.count*LP_vec, color = 'c', label = 'Bruit de fond' )
+
 				axarr[0].plot( [], [], color = 'y', label = 'PSF individuelles' )
 		else:
 			self.fit.data_reg.count = 0*self.fit.data_reg.theta
@@ -841,11 +870,18 @@ class spectre:
 				[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
 
 			if plotPSF == 1 and plot == 1:
-				if PSF[0:3] == 'v2k':
-					axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta ), color = 'y' )
-					axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta ), color = 'y' )
+				if self.fit.corr_LP == False:
+					if PSF[0:3] == 'v2k':
+						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta ), color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta ), color = 'y' )
+					else:	
+						axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta ), color = 'y' )
 				else:	
-					axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta ), color = 'y' )
+					if PSF[0:3] == 'v2k':
+						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta )*LP_vec, color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta )*LP_vec, color = 'y' )
+					else:	
+						axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta )*LP_vec, color = 'y' )
 
 			if PSF[0:3] == 'v2k':
 				self.fit.data_reg.count += f1( self.fit.data_reg.theta )
@@ -853,6 +889,9 @@ class spectre:
 			else:
 				self.fit.data_reg.count += f( self.fit.data_reg.theta )
 
+		if self.fit.corr_LP == True:
+			self.fit.data_reg.count = self.fit.data_reg.count * LP_vec
+		
 		s_res_2 = 0
 		s_iobs_2 = 0
 		s_w_iobs_2 = 0
@@ -945,6 +984,14 @@ class spectre:
 
 		self.back_pts_list.append( [self.data_smooth.theta[-1], float( f_count(self.data_smooth.theta[-1]) ) ] )
 		self.etat.back_list = True
+
+		if self.fit.corr_LP == True:
+			for pt in self.back_pts_list:
+				th0 = pt[0]
+				th_b_rad = th0*np.pi/360.
+				LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+				pt[1] = pt[1]/LP
+
 		self.clean_back_pts()
 
 		if plot == 1 or plot ==2:
@@ -1009,7 +1056,16 @@ class spectre:
 			plt.show()
 
 	def clean_back_pts( self ):
-		
+		"""
+
+		Élimine les points d'arrière-plan choisis entre des doublons K-a1/K-a2.
+		Le point est éliminé si sa position est à moins de 1 degré de la position d'un pic.
+
+		Modifie self.peak_list
+
+		"""
+
+
 		if self.etat.back_list == False or self.etat.reg == False:
 			return
 
@@ -1112,7 +1168,7 @@ class spectre:
 		erreur = 0
 		
 		if track == 1:
-			print('It.\tR\tR_wp\tlogres\tn')
+			print('It.\tR\tR_wp\tlogres\tn\tm\tnxm')
 			print('0\t' + str( round(self.fit.R,2) ) + '\t' + str( round(self.fit.R_wp, 2) ) )
 		
 		#Boucle principale de calcul
@@ -1197,10 +1253,16 @@ class spectre:
 								I = self.peak_list[pic_index][1][1]
 								th0 = self.peak_list[pic_index][1][2]
 								c = self.peak_list[pic_index][1][3]
+								if self.fit.corr_LP == True:
+									th_b_rad = th*np.pi/360.
+									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									I = I*LP
 
 							if PSF == 'g':
 								if arg == 1:
 									J[i, j] = np.exp( -(th-th0)**2 / (2*c**2) )
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP
 								elif arg == 2:	
 									J[i, j] = I*(th - th0)/(c**2) * J[i, j-1]
 								elif arg == 3:
@@ -1209,6 +1271,8 @@ class spectre:
 							elif PSF == 'l':
 								if arg == 1:
 									J[i, j] = c**2 / (c**2 + (th - th0)**2) 
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP
 								elif arg == 2:	
 									J[i, j] = 2*I*c**2*(th - th0) / (c**2 + (th - th0)**2 )**2 
 								elif arg == 3:	
@@ -1223,11 +1287,19 @@ class spectre:
 								k_voigt = beta_l / (beta_g*np.pi**0.5)
 								z = np.pi**0.5*(th - th0)/beta_g + 1j*k_voigt
 								I = beta_l*I0g*I0l*wofz(z).real
+								if self.fit.corr_LP == True:
+									th_b_rad = th*np.pi/360.
+									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									I = I*LP
 								dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
 								if arg == 1:
 									J[i, j] = I/I0g
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP**0.5
 								elif arg == 2:	
 									J[i, j] = I/I0l
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP**0.5
 								elif arg == 3:	
 									J[i, j] = -beta_l*I0l*I0g*np.pi**0.5/beta_g*( dwdz ).real
 								elif arg == 4:	
@@ -1243,9 +1315,15 @@ class spectre:
 								k_voigt = beta_l / (beta_g*np.pi**0.5)
 								z = np.pi**0.5*(th - th0)/beta_g + 1j*k_voigt
 								I = beta_l*I0lg**2*wofz(z).real
+								if self.fit.corr_LP == True:
+									th_b_rad = th*np.pi/360.
+									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									I = I*LP
 								dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
 								if arg == 1:
 									J[i, j] = 2*I/I0lg
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP**0.5
 								elif arg == 2:	
 									J[i, j] = -beta_l*I0lg**2*np.pi**0.5/beta_g*( dwdz ).real
 								elif arg == 3:	
@@ -1275,12 +1353,18 @@ class spectre:
 								I1 = 1./(1+ratio_alph)*beta_l*I0lg**2*wofz(z1).real
 								I2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*wofz(z2).real
 								I = I1 + I2
+								if self.fit.corr_LP == True:
+									th_b_rad = th*np.pi/360.
+									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									I = I*LP
 
 								dwdz1 = -2*z1*wofz(z1) + 2j/np.pi**0.5
 								dwdz2 = -2*z2*wofz(z2) + 2j/np.pi**0.5
 
 								if arg == 1:
 									J[i, j] = 2*I/I0lg
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP**0.5
 								elif arg == 2:	
 									fact1 = -beta_l*I0lg**2*np.pi**0.5/beta_g
 									fact2 = lam * np.cos(th0/2. * 2*np.pi/360.) / (2*(np.sin(th0/2. * 2*np.pi/360.)**2))
@@ -1388,7 +1472,7 @@ class spectre:
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )
 				self.fit.delta_vec = np.append( self.fit.delta_vec, crit2 )
 				if track == 1:
-					print(str(k) + '\t' + str(round(self.fit.R, 2)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) )
+					print(str(k) + '\t' + str(round(self.fit.R, 2)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) + '\t' + str(m) + '\t' + str(m*n) )
 
 				#Test de convergence du paramètre logres
 				if logres != 0 and crit2 < 10**logres:
