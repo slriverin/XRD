@@ -1368,9 +1368,9 @@ class spectre:
 								elif arg == 2:	
 									fact1 = -beta_l*I0lg**2*np.pi**0.5/beta_g
 									fact2 = lam * np.cos(th0/2. * 2*np.pi/360.) / (2*(np.sin(th0/2. * 2*np.pi/360.)**2))
-									J1 = (1 + lam_2/10/(1-lam_2**2/4/d**2)**0.5 - lam_1/10/(1-lam_1**2/4/d**2)**0.5)
-									J2 = (1 - 2*lam_2/5/(1-lam_2**2/4/d**2)**0.5 + 2*lam_1/5/(1-lam_1**2/4/d**2)**0.5)
-									J[i, j] = fact1*fact2*( 0.6917 * J1 * dwdz1.real + 0.3083 * J2 * dwdz2.real )
+									J1 = (1 + 0.5*ratio_alph**2/(1+ratio_alph**2)*lam_2/(1-lam_2**2/4/d**2)**0.5 - 0.5*ratio_alph**2/(1+ratio_alph**2)*lam_1/(1-lam_1**2/4/d**2)**0.5)
+									J2 = (1 - 0.5/(1+ratio_alph**2)*lam_2/(1-lam_2**2/4/d**2)**0.5 + 0.5/(1+ratio_alph**2)*lam_1/(1-lam_1**2/4/d**2)**0.5)
+									J[i, j] = fact1*fact2*( 1/(1+ratio_alph) * J1 * dwdz1.real + ratio_alph/(1+ratio_alph) * J2 * dwdz2.real )
 								elif arg == 3:	
 									J1 = 1./(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
 									J2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
