@@ -573,7 +573,7 @@ class spectre:
 			print 'Impossible de faire la régression, liste de pics manquante'
 			return
 
-		if not( PSF == 'g' or PSF =='l' or PSF == 'v' or PSF == 'v2' or PSF[0:3] == 'v2k' ):
+		if not( PSF == 'g' or PSF =='l' or PSF == 'v' or PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k' ):
 			print( u'Veuillez entrer une fonction de régression valide' )
 			return
 
@@ -671,7 +671,7 @@ class spectre:
 				I0g = (I / (beta_l * wofz( 1j*k )).real)**0.5
 				I0l = I0g
 
-			elif PSF == 'v2' or PSF[0:3] == 'v2k':
+			elif PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
 				k = 1/np.pi**0.5
 				beta_g = ( FWHM**2*np.pi / (4.*(1.+k**2)) )**0.5
 				beta_l = k * beta_g * np.pi**0.5
@@ -680,7 +680,7 @@ class spectre:
 
 			if PSF == 'v':
 				self.peak_list[i][1] = [PSF, I0g, I0l, th0, beta_g, beta_l]
-			elif PSF == 'v2' or PSF[0:3] == 'v2k':
+			elif PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
 				self.peak_list[i][1] = [PSF, I0lg, th0, beta_g, beta_l]
 			else:	
 				self.peak_list[i][1] = [PSF, I, th0, c]
@@ -730,9 +730,14 @@ class spectre:
 		if emetteur == 'Cu' and raie == 'a':
 			lam_1 = 1.540562
 			lam_2 = 1.544390
+			lam_3 = 1.53416
 
 		
-		if PSF[0:3] == 'v2k':
+		if PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
+			if PSF[1] == '3':
+				pic3 = True
+			else:
+				pic3 = False
 			I0lg = self.peak_list[pic_index][1][1]
 			t0 =  self.peak_list[pic_index][1][2]
 			beta_g = self.peak_list[pic_index][1][3]
@@ -757,18 +762,33 @@ class spectre:
 		I0_2 = (ratio_alph / (1+ratio_alph))**0.5 * I0lg
 		f2 = lambda x: ( beta_l*I0_2**2*wofz( np.pi**0.5*(x-t2)/beta_g + 1j*k )).real
 		
+		#Pic k-alpha3 :
+		if pic3 == True:
+			t3 = 2.*360*np.arcsin( lam_3 / (2*d) )/(2.*np.pi)
+			I0_3 = 0.09**0.5 * I0_1
+			f3 = lambda x: ( beta_l*I0_3**2*wofz( np.pi**0.5*(x-t3)/beta_g + 1j*k )).real
+
+
 		if plot == 1:
 			plt.plot( self.raw_data.theta, self.raw_data.count, label = r'Donn\'{e}es brutes', color = 'k' )
 			plt.plot( self.raw_data.theta, f( self.raw_data.theta ), label = 'Pics confondus', color = 'b' )
 			plt.plot( self.raw_data.theta, f1( self.raw_data.theta ), color = 'y', label = 'PSF individuelles' )
 			plt.plot( self.raw_data.theta, f2( self.raw_data.theta ), color = 'y' )
-			plt.plot( self.raw_data.theta, f1( self.raw_data.theta ) + f2( self.raw_data.theta ), color = 'r', label = r'Somme PSF s\'{e}par\'{e}es' )
+			if pic3 == False:
+				plt.plot( self.raw_data.theta, f1( self.raw_data.theta ) + f2( self.raw_data.theta ), color = 'r', label = r'Somme PSF s\'{e}par\'{e}es' )
+			else:
+				plt.plot( self.raw_data.theta, f3( self.raw_data.theta ), color = 'y' )
+				plt.plot( self.raw_data.theta, f1( self.raw_data.theta ) + f2( self.raw_data.theta ) + f3( self.raw_data.theta ), color = 'r', label = r'Somme PSF s\'{e}par\'{e}es' )
+
 			plt.xlabel( r'$2 \theta$ ($^\circ$) ' )
 			plt.ylabel( r'$I$ (comptes)' )
 			plt.legend()
 			plt.show()
 
-		return f, f1, f2
+		if pic3 == False:
+			return f, f1, f2
+		else:
+			return f, f1, f2, f3
 
 
 	def fit_calcul( self, plot = 0, plotPSF = 0, emetteur = 'Cu', raie = 'a', mat = mater.mat4340 ):
@@ -866,26 +886,40 @@ class spectre:
 				f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k )).real
 
 			elif PSF[0:3] == 'v2k':
-				
 				[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+
+			elif PSF[0:3] == 'v3k':
+				[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
 
 			if plotPSF == 1 and plot == 1:
 				if self.fit.corr_LP == False:
 					if PSF[0:3] == 'v2k':
 						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta ), color = 'y' )
 						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta ), color = 'y' )
+					elif PSF[0:3] == 'v3k':
+						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta ), color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta ), color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f3( self.fit.data_reg.theta ), color = 'y' )
 					else:	
 						axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta ), color = 'y' )
 				else:	
 					if PSF[0:3] == 'v2k':
 						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta )*LP_vec, color = 'y' )
 						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta )*LP_vec, color = 'y' )
+					elif PSF[0:3] == 'v3k':
+						axarr[0].plot( self.fit.data_reg.theta, f1( self.fit.data_reg.theta )*LP_vec, color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f2( self.fit.data_reg.theta )*LP_vec, color = 'y' )
+						axarr[0].plot( self.fit.data_reg.theta, f3( self.fit.data_reg.theta )*LP_vec, color = 'y' )
 					else:	
 						axarr[0].plot( self.fit.data_reg.theta, f( self.fit.data_reg.theta )*LP_vec, color = 'y' )
 
 			if PSF[0:3] == 'v2k':
 				self.fit.data_reg.count += f1( self.fit.data_reg.theta )
 				self.fit.data_reg.count += f2( self.fit.data_reg.theta )
+			elif PSF[0:3] == 'v3k':
+				self.fit.data_reg.count += f1( self.fit.data_reg.theta )
+				self.fit.data_reg.count += f2( self.fit.data_reg.theta )
+				self.fit.data_reg.count += f3( self.fit.data_reg.theta )
 			else:
 				self.fit.data_reg.count += f( self.fit.data_reg.theta )
 
@@ -1077,7 +1111,7 @@ class spectre:
 
 				PSF = self.peak_list[j][1][0]
 
-				if PSF == 'g' or PSF == 'l' or PSF == 'li' or PSF[0:2] == 'v2':
+				if PSF == 'g' or PSF == 'l' or PSF == 'li' or PSF[0:2] == 'v2' or PSF[0:2] == 'v3':
 					th0_pic = self.peak_list[j][1][2]
 				elif PSF == 'v':
 					th0_pic = self.peak_list[j][1][3]
@@ -1168,8 +1202,8 @@ class spectre:
 		erreur = 0
 		
 		if track == 1:
-			print('It.\tR\tR_wp\tlogres\tn\tm\tnxm')
-			print('0\t' + str( round(self.fit.R,2) ) + '\t' + str( round(self.fit.R_wp, 2) ) )
+			print('It.\tR\t\tR_wp\tlogres\tn\tm\tnxm')
+			print('0\t' + str( round(self.fit.R,2) ) + '\t\t' + str( round(self.fit.R_wp, 2) ) )
 		
 		#Boucle principale de calcul
 		try:
@@ -1213,12 +1247,18 @@ class spectre:
 						f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k_voigt)).real
 
 					elif PSF[0:3] == 'v2k':
-						
 						[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+
+					elif PSF[0:3] == 'v3k':
+						[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
 
 					if PSF[0:3] == 'v2k':
 						fct_reg += f1( self.fit.data_reg.theta )
 						fct_reg += f2( self.fit.data_reg.theta )
+					if PSF[0:3] == 'v3k':
+						fct_reg += f1( self.fit.data_reg.theta )
+						fct_reg += f2( self.fit.data_reg.theta )
+						fct_reg += f3( self.fit.data_reg.theta )
 					else:
 						fct_reg += f( self.fit.data_reg.theta )
 				
@@ -1331,7 +1371,7 @@ class spectre:
 								elif arg == 4:
 									J[i, j] = I/beta_l + beta_l*I0lg**2*( dwdz*1j/(beta_g*np.pi**0.5) ).real
 
-							elif PSF[0:3] == 'v2k':
+							elif PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
 								if len(PSF) > 3:
 									ratio_alph = float( PSF[4:] )
 								else:
@@ -1347,8 +1387,8 @@ class spectre:
 								
 								delta_th = 2.*360./(2*np.pi) * ( np.arcsin( lam_1 / (2*d) ) - np.arcsin( lam_2 / (2*d)))
 
-								z1 = np.pi**0.5*(th - th0 - 0.2*delta_th)/beta_g + 1j*k_voigt
-								z2 = np.pi**0.5*(th - th0 + 0.8*delta_th)/beta_g + 1j*k_voigt
+								z1 = np.pi**0.5*(th - th0 - ratio_alph**2/(1+ratio_alph**2)*delta_th)/beta_g + 1j*k_voigt
+								z2 = np.pi**0.5*(th - th0 + 1/(1+ratio_alph**2)*delta_th)/beta_g + 1j*k_voigt
 
 								I1 = 1./(1+ratio_alph)*beta_l*I0lg**2*wofz(z1).real
 								I2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*wofz(z2).real
@@ -1472,7 +1512,7 @@ class spectre:
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )
 				self.fit.delta_vec = np.append( self.fit.delta_vec, crit2 )
 				if track == 1:
-					print(str(k) + '\t' + str(round(self.fit.R, 2)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) + '\t' + str(m) + '\t' + str(m*n) )
+					print(str(k) + '\t' + str(round(self.fit.R, 6)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) + '\t' + str(m) + '\t' + str(m*n) )
 
 				#Test de convergence du paramètre logres
 				if logres != 0 and crit2 < 10**logres:
