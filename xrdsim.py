@@ -67,6 +67,9 @@ import xrdanal
 rc('font',**{'family':'serif','serif':['Palatino']})
 rc('text', usetex=True)
 plt.ioff()
+lam1 = 1.540562
+lam2 = 1.544390
+lam3 = 1.53416
 
 class data:
 	def __init__( self ):
@@ -423,13 +426,22 @@ class spectre:
 		mis à jour par l'exécution de la fonction iter.
 
 		Args :
-			liste_no_seq : liste contenant les pics pour lesquels on veut changer d'état.
+			liste_no_seq :  liste contenant les pics pour lesquels on veut changer d'état.
+					Mettre la valeur True ou False (pas dans une structure liste) pour activer/désactiver tous les pics
 
 		La fonction modifie self.peak_list
 		"""
 
 		if self.etat.peak_list == False:
 			print( 'Aucune liste de pics' )
+
+		if type( liste_no_seq ) == bool:
+			for i in range( len( self.peak_list ) ):
+				if len( self.peak_list[i][1] ) == 0:
+					self.peak_list[i][3] == False
+				else:
+					self.peak_list[i][3] = liste_no_seq
+			return		
 
 		for i in range(	len( liste_no_seq ) ):
 			for j in range( len( self.peak_list ) ):
@@ -503,12 +515,36 @@ class spectre:
 				f_count = interp1d( self.fit.data_reg.theta, self.fit.data_reg.count )
 
 			for i in range(len( self.peak_list )):
-				theta_peak = self.peak_list[i][2]
-				plt.plot( [theta_peak, theta_peak], [0, f_count(theta_peak) ], color='r' )
+				if len(self.peak_list[i][1]) == 0:
+					th0 = self.peak_list[i][2]
+					PSF = ''
+				else:
+					PSF = self.peak_list[i][1][0]
+					if PSF == 'g' or PSF == 'l' or PSF == 'li':
+						th0 = self.peak_list[i][1][2]
+					elif PSF == 'v':
+						th0 = self.peak_list[i][1][3]
+					elif PSF[0:3] == 'v2k':
+						th0 = self.peak_list[i][1][2]
+						th2 = 360/np.pi*np.arcsin(lam2/lam1*np.sin(th0*np.pi/360))
+					elif PSF[0:3] == 'v3k':
+						th0 = self.peak_list[i][1][2]
+						th2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(th0*np.pi/360) )
+						th3 = 360/np.pi*np.arcsin( lam3/lam1*np.sin(th0*np.pi/360) )
+								
+						
+				plt.plot( [th0, th0], [0, f_count(th0) ], color='r' )
+
+				if PSF[0:3] == 'v2k':
+					plt.plot( [th2, th2], [0, f_count(th2)] , color = 'r' )
+				elif PSF[0:3] == 'v3k':
+					plt.plot( [th2, th2], [0, f_count(th2)] , color = 'r' )
+					plt.plot( [th3, th3], [0, f_count(th3)] , color = 'r' )
+							
 				if tag == 1:
-					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (theta_peak, f_count(theta_peak)*0.5 ) )
+					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (th0, f_count(th0)*0.5 ) )
 				elif tag == 2 :	
-					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{(' + self.peak_list[i][5] + ')}$}', (theta_peak, f_count(theta_peak)))
+					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{(' + self.peak_list[i][5] + ')}$}', (th0, f_count(th0)))
 
 				
 			#plt.plot( self.peak_list.theta, self.peak_list.count, 'ro' ) r7
@@ -750,21 +786,26 @@ class spectre:
 			else:
 				ratio_alph = 0.4457
 
-		d = lam / ( 2*np.sin( t0/2. * 2.*np.pi/360. ) )
+			t2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(t0*np.pi/360) )
+			LP1 = xrdanal.pol_f( t0 * np.pi/360 ) * xrdanal.lor_f( t0 * np.pi/360 )
+			LP2 = xrdanal.pol_f( t2 * np.pi/360 ) * xrdanal.lor_f( t2 * np.pi/360 )
+			if self.fit.corr_LP == False:
+				ratio_alph = ratio_alph * LP2/LP1
+				
+
+		d = lam1 / ( 2*np.sin( t0/2. * 2.*np.pi/360. ) )
 
 		#Pic k-alpha1 :
-		t1 = 2.*360*np.arcsin( lam_1 / (2*d) )/(2.*np.pi)
 		I0_1 = (1 / (1+ratio_alph))**0.5 * I0lg
-		f1 = lambda x: ( beta_l*I0_1**2*wofz( np.pi**0.5*(x-t1)/beta_g + 1j*k )).real
+		f1 = lambda x: ( beta_l*I0_1**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k )).real
 
 		#Pic k-alpha2 :
-		t2 = 2.*360*np.arcsin( lam_2 / (2*d) )/(2.*np.pi)
 		I0_2 = (ratio_alph / (1+ratio_alph))**0.5 * I0lg
 		f2 = lambda x: ( beta_l*I0_2**2*wofz( np.pi**0.5*(x-t2)/beta_g + 1j*k )).real
 		
 		#Pic k-alpha3 :
 		if pic3 == True:
-			t3 = 2.*360*np.arcsin( lam_3 / (2*d) )/(2.*np.pi)
+			t3 = 360/np.pi*np.arcsin( lam3/lam1*np.sin(t0*np.pi/360) )
 			I0_3 = 0.09**0.5 * I0_1
 			f3 = lambda x: ( beta_l*I0_3**2*wofz( np.pi**0.5*(x-t3)/beta_g + 1j*k )).real
 
@@ -989,12 +1030,15 @@ class spectre:
 		plt.legend()
 		plt.show()
 
-	def background_find_peaks( self, plot = 0 ):
+	def background_find_peaks( self, meth = 'mid', plot = 0 ):
 		"""
 		Crée une liste des points médians entre les pics, afin de faire une approximation du background
 
 		Args :
-			plot : Mettre à 1 pour afficher les résultats
+			plot : 	Mettre à 1 pour afficher les résultats
+			meth : 	Méthode pour trouver les points d'arrière-plan
+				'mid' : Les points milieu entre les pics sont trouvés
+				'intx' : Un point est mis à chaque intervalle de x degrés (ex : 'int5' met un point à chaque 5 degrés)
 
 		Rajoute la liste de points dans la structure self.back_pts_list
 		"""
@@ -1006,15 +1050,26 @@ class spectre:
 		self.back_pts_list = []
 		f_count = interp1d( self.data_smooth.theta, self.data_smooth.count )
 
-		for i in range( len( self.peak_list ) ):
-			peak_list_sorted.append( self.peak_list[i][2] )
-
-		peak_list_sorted.sort()	
-
+		#Le point à gauche de l'intervalle mesuré est toujours ajouté
 		self.back_pts_list.append( [self.data_smooth.theta[0], float( f_count(self.data_smooth.theta[0]) ) ] )
-		for i in range( len( peak_list_sorted ) - 1):
-			theta_mid = (peak_list_sorted[i] + peak_list_sorted[i+1])/2 
-			self.back_pts_list.append( [theta_mid, float( f_count(theta_mid) )] )
+
+		if meth == 'mid':
+			for i in range( len( self.peak_list ) ):
+				peak_list_sorted.append( self.peak_list[i][2] )
+
+			peak_list_sorted.sort()	
+
+			for i in range( len( peak_list_sorted ) - 1):
+				theta_mid = (peak_list_sorted[i] + peak_list_sorted[i+1])/2 
+				self.back_pts_list.append( [theta_mid, float( f_count(theta_mid) )] )
+
+		elif meth[0:3] == 'int':
+			interv = float( meth[3:] )
+			dernierpt = self.raw_data.theta[0]
+			for theta in self.raw_data.theta: 
+				 if theta - dernierpt > interv:
+					self.back_pts_list.append( [theta, float( f_count(theta) )] )
+					dernierpt = theta
 
 		self.back_pts_list.append( [self.data_smooth.theta[-1], float( f_count(self.data_smooth.theta[-1]) ) ] )
 		self.etat.back_list = True
@@ -1202,8 +1257,8 @@ class spectre:
 		erreur = 0
 		
 		if track == 1:
-			print('It.\tR\t\tR_wp\tlogres\tn\tm\tnxm')
-			print('0\t' + str( round(self.fit.R,2) ) + '\t\t' + str( round(self.fit.R_wp, 2) ) )
+			print('It.\tR\t\tR_wp\t  logres     n        m      nxm')
+			print('     0% 10.6f' % self.fit.R + '% 16.6f' % self.fit.R_wp ) 
 		
 		#Boucle principale de calcul
 		try:
@@ -1343,7 +1398,7 @@ class spectre:
 								elif arg == 3:	
 									J[i, j] = -beta_l*I0l*I0g*np.pi**0.5/beta_g*( dwdz ).real
 								elif arg == 4:	
-									J[i, j] = beta_l*I0l*I0g*( -dwdz*z/beta_g**2 ).real
+									J[i, j] = beta_l*I0l*I0g*( -dwdz*z/beta_g ).real
 								elif arg == 5:
 									J[i, j] = I/beta_l + beta_l*I0l*I0g*( dwdz*1j/(beta_g*np.pi**0.5) ).real
 
@@ -1371,7 +1426,7 @@ class spectre:
 								elif arg == 4:
 									J[i, j] = I/beta_l + beta_l*I0lg**2*( dwdz*1j/(beta_g*np.pi**0.5) ).real
 
-							elif PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
+							elif PSF[0:3] == 'v2k':
 								if len(PSF) > 3:
 									ratio_alph = float( PSF[4:] )
 								else:
@@ -1383,15 +1438,19 @@ class spectre:
 								beta_l = self.peak_list[pic_index][1][4]
 								k_voigt = beta_l / (beta_g*np.pi**0.5)
 								
-								d = lam / ( 2*np.sin( th0/2. * 2.*np.pi/360. ) )
+								d = lam1 / ( 2*np.sin( th0/2. * 2.*np.pi/360. ) )
+								th2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(th0*np.pi/360) )
+								LP1 = xrdanal.pol_f( th0 * np.pi/360 ) * xrdanal.lor_f( th0 * np.pi/360 )
+								LP2 = xrdanal.pol_f( th2 * np.pi/360 ) * xrdanal.lor_f( th2 * np.pi/360 )
+								if self.fit.corr_LP == False:
+									ratio_alph = ratio_alph * LP2/LP1
 								
-								delta_th = 2.*360./(2*np.pi) * ( np.arcsin( lam_1 / (2*d) ) - np.arcsin( lam_2 / (2*d)))
-
-								z1 = np.pi**0.5*(th - th0 - ratio_alph**2/(1+ratio_alph**2)*delta_th)/beta_g + 1j*k_voigt
-								z2 = np.pi**0.5*(th - th0 + 1/(1+ratio_alph**2)*delta_th)/beta_g + 1j*k_voigt
+								z1 = np.pi**0.5*(th - th0)/beta_g + 1j*k_voigt
+								z2 = np.pi**0.5*(th - th2)/beta_g + 1j*k_voigt
 
 								I1 = 1./(1+ratio_alph)*beta_l*I0lg**2*wofz(z1).real
 								I2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*wofz(z2).real
+
 								I = I1 + I2
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
@@ -1406,20 +1465,91 @@ class spectre:
 									if self.fit.corr_LP == True:
 										J[i, j] = J[i, j] * LP**0.5
 								elif arg == 2:	
+									th0bragg = th0 * np.pi/360
+									dth2dth0 = np.pi**0.5/beta_g * lam2/lam1 * np.cos(th0bragg) / (1 - ( lam2/lam1 * np.sin(th0bragg) )**2 )**0.5
 									fact1 = -beta_l*I0lg**2*np.pi**0.5/beta_g
-									fact2 = lam * np.cos(th0/2. * 2*np.pi/360.) / (2*(np.sin(th0/2. * 2*np.pi/360.)**2))
-									J1 = (1 + 0.5*ratio_alph**2/(1+ratio_alph**2)*lam_2/(1-lam_2**2/4/d**2)**0.5 - 0.5*ratio_alph**2/(1+ratio_alph**2)*lam_1/(1-lam_1**2/4/d**2)**0.5)
-									J2 = (1 - 0.5/(1+ratio_alph**2)*lam_2/(1-lam_2**2/4/d**2)**0.5 + 0.5/(1+ratio_alph**2)*lam_1/(1-lam_1**2/4/d**2)**0.5)
-									J[i, j] = fact1*fact2*( 1/(1+ratio_alph) * J1 * dwdz1.real + ratio_alph/(1+ratio_alph) * J2 * dwdz2.real )
+									J1 = fact1 * dwdz1.real
+									J2 = fact1 * dth2dth0 * dwdz2.real
+									J[i, j] =  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2
+
 								elif arg == 3:	
-									J1 = 1./(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
-									J2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
-									J[i, j] = J1 + J2
+									J1 = beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
+									J2 = beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
+									J[i, j] =  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2
 
 								elif arg == 4:
-									J1 = 1./(1 + ratio_alph)*beta_l*I0lg**2*( dwdz1*1j/(beta_g*np.pi**0.5) ).real
-									J2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*( dwdz2*1j/(beta_g*np.pi**0.5) ).real
-									J[i, j] = I/beta_l + J1 + J2
+									J1 = beta_l*I0lg**2*( dwdz1*1j/(beta_g*np.pi**0.5) ).real
+									J2 = beta_l*I0lg**2*( dwdz2*1j/(beta_g*np.pi**0.5) ).real
+									J[i, j] = I/beta_l +  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2
+
+							elif PSF[0:3] == 'v3k':
+								if len(PSF) > 3:
+									ratio_alph = float( PSF[4:] )
+								else:
+									ratio_alph = 0.4457
+								
+								I0lg = self.peak_list[pic_index][1][1]
+								th0 = self.peak_list[pic_index][1][2]
+								beta_g = self.peak_list[pic_index][1][3]
+								beta_l = self.peak_list[pic_index][1][4]
+								k_voigt = beta_l / (beta_g*np.pi**0.5)
+								
+								d = lam1 / ( 2*np.sin( th0/2. * 2.*np.pi/360. ) )
+								th2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(th0*np.pi/360) )
+								th3 = 360/np.pi*np.arcsin( lam3/lam1*np.sin(th0*np.pi/360) )
+								LP1 = xrdanal.pol_f( th0 * np.pi/360 ) * xrdanal.lor_f( th0 * np.pi/360 )
+								LP2 = xrdanal.pol_f( th2 * np.pi/360 ) * xrdanal.lor_f( th2 * np.pi/360 )
+								LP3 = xrdanal.pol_f( th3 * np.pi/360 ) * xrdanal.lor_f( th3 * np.pi/360 )
+
+								if self.fit.corr_LP == False:
+									ratio_alph = ratio_alph * LP2/LP1
+									ratio3 = 0.09 * LP3/LP1
+								else:
+									ratio3 = 0.09
+								
+								z1 = np.pi**0.5*(th - th0)/beta_g + 1j*k_voigt
+								z2 = np.pi**0.5*(th - th2)/beta_g + 1j*k_voigt
+								z3 = np.pi**0.5*(th - th3)/beta_g + 1j*k_voigt
+
+								I1 = 1./(1+ratio_alph)*beta_l*I0lg**2*wofz(z1).real
+								I2 = ratio_alph/(1 + ratio_alph)*beta_l*I0lg**2*wofz(z2).real
+								I3 = ratio3*I1
+
+								I = I1 + I2 + I3
+								if self.fit.corr_LP == True:
+									th_b_rad = th*np.pi/360.
+									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									I = I*LP
+
+								dwdz1 = -2*z1*wofz(z1) + 2j/np.pi**0.5
+								dwdz2 = -2*z2*wofz(z2) + 2j/np.pi**0.5
+								dwdz3 = -2*z3*wofz(z3) + 2j/np.pi**0.5
+
+								if arg == 1:
+									J[i, j] = 2*I/I0lg
+									if self.fit.corr_LP == True:
+										J[i, j] = J[i, j] * LP**0.5
+								elif arg == 2:	
+									th0bragg = th0 * np.pi/360
+									dth2dth0 = np.pi**0.5/beta_g * lam2/lam1 * np.cos(th0bragg) / (1 - ( lam2/lam1 * np.sin(th0bragg) )**2 )**0.5
+									dth3dth0 = np.pi**0.5/beta_g * lam3/lam1 * np.cos(th0bragg) / (1 - ( lam3/lam1 * np.sin(th0bragg) )**2 )**0.5
+									fact1 = -beta_l*I0lg**2*np.pi**0.5/beta_g
+									J1 = fact1 * dwdz1.real
+									J2 = fact1 * dth2dth0 * dwdz2.real
+									J3 = fact1 * dth3dth0 * dwdz3.real
+									J[i, j] =  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2 + ratio3/(1+ratio_alph) * J3
+
+								elif arg == 3:	
+									J1 = beta_l*I0lg**2*( -dwdz1*z1/beta_g ).real
+									J2 = beta_l*I0lg**2*( -dwdz2*z2/beta_g ).real
+									J3 = beta_l*I0lg**2*( -dwdz3*z3/beta_g ).real
+									J[i, j] =  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2 + ratio3/(1+ratio_alph) * J3
+
+								elif arg == 4:
+									J1 = beta_l*I0lg**2*( dwdz1*1j/(beta_g*np.pi**0.5) ).real
+									J2 = beta_l*I0lg**2*( dwdz2*1j/(beta_g*np.pi**0.5) ).real
+									J3 = beta_l*I0lg**2*( dwdz3*1j/(beta_g*np.pi**0.5) ).real
+									J[i, j] = I/beta_l +  1/(1+ratio_alph) * J1 + ratio_alph/(1+ratio_alph) * J2 + ratio3/(1+ratio_alph) * J3
 
 						elif cle[0] == 'b':
 							#L'argument est un point de bruit de fond
@@ -1512,7 +1642,7 @@ class spectre:
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )
 				self.fit.delta_vec = np.append( self.fit.delta_vec, crit2 )
 				if track == 1:
-					print(str(k) + '\t' + str(round(self.fit.R, 6)) + '\t' + str(round(self.fit.R_wp, 2)) + '\t' + str(round(np.log10(crit2), 2)) + '\t' + str(n) + '\t' + str(m) + '\t' + str(m*n) )
+					print('% 6d' %k + '% 10.6f' %self.fit.R + '% 16.6f' %self.fit.R_wp + '%8.2f' %np.log10(crit2)+ '% 8d' %n + '% 8d' %m + '% 8d' %(m*n) )
 
 				#Test de convergence du paramètre logres
 				if logres != 0 and crit2 < 10**logres:

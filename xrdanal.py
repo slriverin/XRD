@@ -41,7 +41,7 @@ def calc_surf( spectre ):
 		print( u'Compléter la simulation d\'abord' )
 		return
 
-	print( u'Pic #\tPhase\tPlan\t2-theta\tI\tA\tFWHM\tForm Fact  P/B\t    P/N' )
+	print( u'Pic #\tPhase\tPlan\t\t2-theta\tI\tA\tFWHM\tForm Fact  P/B\t    P/N' )
 		
 	surf_phase = {}
 	surf_tot_PSF = 0
@@ -69,7 +69,7 @@ def calc_surf( spectre ):
 			beta = beta_g * np.exp(-k_voigt**2)/(erfc(k_voigt))
 			f_fact = FWHM / beta
 
-		elif PSF == 'v2':
+		elif PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
 			I0lg = spectre.peak_list[i][1][1]
 			th0 = spectre.peak_list[i][1][2]
 			beta_g = spectre.peak_list[i][1][3]
@@ -241,7 +241,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			d = calc_d( liste_pics[i][0], a )
 			theta = np.arcsin( lam / (2*d) )
 			s = np.sin(theta) / lam
-			sF = scatt_f( s ) + f1 + 1j*f2
+			sF = scatt_f( s, mat ) + f1 + 1j*f2
 			FF = (16*sF*np.conj(sF)).real
 			p = liste_p[i]
 			Lf = lor_f( theta )
@@ -276,8 +276,8 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			(h, k, l) = liste_pics[i][0]
 			d = calc_d( liste_pics[i][0], a )
 			theta = np.arcsin( lam / (2*d) )
-			s = np.sin(theta) / lam
-			sF = scatt_f( s ) + f1 + 1j*f2
+			s = 1./(2*d)
+			sF = scatt_f( s, mat ) + f1 + 1j*f2
 			if (h + k + l) % 2 == 0:	#Somme des indices paire
 				FFmult = 64
 			else:
@@ -462,7 +462,7 @@ def scatt_f( s, mat = 'Fe' ):
 		#S'il s'agit d'un mélange de plusieurs éléments, une récursion est faite pour trouver le facteur moyen pondéré
 		#selon la fraction atomique
 		if type( mat ) == list:
-			mat_conv( elem, 'a' )
+			mat_conv( mat, 'a' )
 			s_f_vect = []
 			for i in range( len(mat) - 1):
 				mat_temp = mat[i+1][0]
