@@ -1058,4 +1058,158 @@ def quant( spectre, liste_phases, affich = 1 ):
 		print( u'Écart-type :\t\t\t' + str(round(100*s_V, 2)) + ' % vol.' )
 
 
+def list_var( spectre ):
+	"""
+	
+	Dresse la liste des variables raffinées avec leur variance et écart-type.
+	La matrice de covariance Vx est calculée par la formule :
+		Vx = inv(transpose(J) * W * J)
+		où J est la matrice jacobienne
+		   W est la matrice de pondération : W[i, i] = 1/std[i]
+		   std[i] est l'écart-type du compte au point i du vecteur des données brutes
+		   std[i] = N
+		   N est le nombre de comptes
+	La matrice de covariance n'est pas sauvegardée par l'instruction 'spectre.write' donc elle doit être regénérée à chaque session de travail par une itération incluant toutes les valeurs à raffiner.
 
+	La fonction imprime à l'écran les clés, les variables, les valeurs, les variances et les écarts-type.
+	Les clés peuvent être utilisés pour la fonction 'corr_var', qui retourne les variances et écarts-types si désiré.
+
+	
+	"""
+	
+	if not spectre.etat.vardata:
+		print( u'Faire une itération pour générer les données statistiques nécessaires. Ne pas oublier d\'inclure tous les pics et l\'arrière-plan' )
+		return
+
+	n = len( spectre.fit.Vx )
+	pics_todate = []
+	for i in range( n ):
+		cle = spectre.fit.list_args[i]
+		if cle[0] == 'p':
+			pic = int( cle[1:-1] )
+			if pic in pics_todate:
+				continue
+			else:
+				pics_todate.append(pic)
+
+			for j in range( len( spectre.peak_list ) ):
+				if spectre.peak_list[j][0] == pic:
+					pic_index = j
+			
+			print( "Pic # : %2d" % pic )
+			PSF = spectre.peak_list[pic_index][1][0]
+
+			if PSF == 'g' or PSF == 'l':
+				I = spectre.peak_list[pic_index][1][1]
+				var_I = spectre.fit.Vx[i, i]
+				print(u'\tClé : %s\tI :	   %.2f; variance : %.2e; ecart-type : %.3f' % (cle, I, var_I, var_I**0.5) )
+				th0 = spectre.peak_list[pic_index][1][2]
+				var_th = spectre.fit.Vx[i+1, i+1]
+				print('u\tClé : %s\ttheta_0 : %.3f; variance : %.2e; ecart-type : %.3e' % (cle, th0, var_th, var_th**0.5) )
+				c = spectre.peak_list[pic_index][1][3]
+				var_c = spectre.fit.Vx[i+2, i+2]
+				print('\tc :	   %.2f; variance : %.2f; ecart-type : %.3f' % (c, var_c, var_c**0.5) )
+
+			elif PSF == 'v':
+				I0g = spectre.peak_list[pic_index][1][1]
+				var_I0g = spectre.fit.Vx[i, i]
+				print('\tI0g :     %.2f; variance : %.2e; ecart-type : %.3f' % (I0g, var_I0g, var_I0g**0.5) )
+				I0l = spectre.peak_list[pic_index][1][2]
+				var_I0l = spectre.fit.Vx[i+1, i+1]
+				print('\tI0l :     %.2f; variance : %.2e; ecart-type : %.3f' % (I0l, var_I0l, var_I0l**0.5) )
+				th0 = spectre.peak_list[pic_index][1][3]
+				var_th = spectre.fit.Vx[i+2, i+2]
+				print('\ttheta_0 : %.3f; variance : %.2e; ecart-type : %.3e' % (th0, var_th, var_th**0.5) )
+				beta_g = spectre.peak_list[pic_index][1][4]
+				var_bg = spectre.fit.Vx[i+3, i+3]
+				print('\tbeta_g :  %.5f; variance : %.3e; ecart-type : %.3e' % (beta_g, var_bg, var_bg**0.5) )
+				beta_l = spectre.peak_list[pic_index][1][5]
+				var_bl = spectre.fit.Vx[i+4, i+4]
+				print('\tbeta_l :  %.5f; variance : %.3e; ecart-type : %.3e' % (beta_l, var_bl, var_bl**0.5) )
+
+			elif PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
+				I0lg = spectre.peak_list[pic_index][1][1]
+				var_I0lg = spectre.fit.Vx[i, i]
+				print(u'\tClé : p%d1\tI0lg :    %.2f; variance : %.2e; ecart-type : %.3f' % (pic, I0lg, var_I0lg, var_I0lg**0.5) )
+				th0 = spectre.peak_list[pic_index][1][2]
+				var_th = spectre.fit.Vx[i+1, i+1]
+				print(u'\tClé : p%d2\ttheta_0 : %.3f; variance : %.2e; ecart-type : %.3e' % (pic, th0, var_th, var_th**0.5) )
+				beta_g = spectre.peak_list[pic_index][1][3]
+				var_bg = spectre.fit.Vx[i+2, i+2]
+				print(u'\tClé : p%d3\tbeta_g :  %.5f; variance : %.3e; ecart-type : %.3e' % (pic, beta_g, var_bg, var_bg**0.5) )
+				beta_l = spectre.peak_list[pic_index][1][4]
+				var_bl = spectre.fit.Vx[i+3, i+3]
+				print('\tClé : p%d4\tbeta_l :  %.5f; variance : %.3e; ecart-type : %.3e' % (pic, beta_l, var_bl, var_bl**0.5) )
+
+
+def corr_var( spectre, cle1, cle2, affich = 1 ):
+	"""
+
+	Description à compléter
+
+	"""
+	if not spectre.etat.vardata:
+		print( u'Faire une itération pour générer les données statistiques nécessaires. Ne pas oublier d\'inclure tous les pics et l\'arrière-plan' )
+		return
+
+	n = len( spectre.fit.Vx )
+	for i in range( n ):
+		cle = spectre.fit.list_args[i]
+		if cle == cle1:
+			var1_index = i
+		if cle == cle2:
+			var2_index = i
+
+	for i in range( len( spectre.peak_list ) ):
+		if spectre.peak_list[i][0] == int( cle1[1:-1] ):
+			pic1_index = i
+		if spectre.peak_list[i][0] == int( cle2[1:-1] ):
+			pic2_index = i
+
+	PSF1 = spectre.peak_list[pic1_index][1][0]
+	if PSF1 == 'v2' or PSF1[0:3] == 'v2k' or PSF1[0:3] == 'v3k':
+		arg = int(cle1[-1])
+		if arg == 1:
+			variable1 = 'I0lg'
+		elif arg == 2:
+			variable1 = 'theta0'
+		elif arg == 3:
+			variable1 = 'beta_g'
+		elif arg == 4:
+			variable1 = 'beta_l'
+		
+		valeur1 = spectre.peak_list[pic1_index][1][arg]
+		var1 = spectre.fit.Vx[var1_index, var1_index]
+		stdev1 = var1**0.5
+
+
+	PSF2 = spectre.peak_list[pic2_index][1][0]
+	if PSF2 == 'v2' or PSF2[0:3] == 'v2k' or PSF2[0:3] == 'v3k':
+		arg = int(cle2[-1])
+		if arg == 1:
+			variable2 = 'I0lg'
+		elif arg == 2:
+			variable2 = 'theta0'
+		elif arg == 3:
+			variable2 = 'beta_g'
+		elif arg == 4:
+			variable2 = 'beta_l'
+		
+		valeur2 = spectre.peak_list[pic2_index][1][arg]
+		var2 = spectre.fit.Vx[var2_index, var2_index]
+		stdev2 = var2**0.5
+	
+	covar = spectre.fit.Vx[var1_index, var2_index]
+	correl = covar/(stdev1*stdev2)
+
+	if affich == 1:
+		print( 'Variable 1 : ' )
+		print( u'\tPic # : %d;\tVariable : %s;\tValeur : %.6e;\tVariance : %.3e;\tÉcart-type : %.3e' % (int(cle1[1:-1]), variable1, valeur1, var1, stdev1) )
+		print( '\nVariable 2 : ' )
+		print( u'\tPic # : %d;\tVariable : %s;\tValeur : %.6e;\tVariance : %.3e;\tÉcart-type : %.3e' % (int(cle2[1:-1]), variable2, valeur2, var2, stdev2) )
+		print( '\nCovariance : %.3e' % covar )
+		print( u'Corrélation : %.3f' % correl )
+
+	v1 = [valeur1, var1]
+	v2 = [valeur2, var2]
+	return [v1, v2, covar]

@@ -84,6 +84,7 @@ class etat_cl:
 		self.back = False
 		self.reg = False
 		self.calcul = False
+		self.vardata = False
 
 class spectre:
 
@@ -1234,7 +1235,7 @@ class spectre:
 					list_args[J_index + 3] = 'p' + str(self.peak_list[i][0]) + '4'
 					list_args[J_index + 4] = 'p' + str(self.peak_list[i][0]) + '5'
 					J_index += 5
-				elif self.peak_list[i][1][0] == 'v2' or self.peak_list[i][1][0][0:3] == 'v2k':
+				elif self.peak_list[i][1][0] == 'v2' or self.peak_list[i][1][0][0:3] == 'v2k' or self.peak_list[i][1][0][0:3] == 'v3k':
 					list_args[J_index] = 'p' + str(self.peak_list[i][0]) + '1'
 					list_args[J_index + 1] = 'p' + str(self.peak_list[i][0]) + '2'
 					list_args[J_index + 2] = 'p' + str(self.peak_list[i][0]) + '3'
@@ -1579,16 +1580,22 @@ class spectre:
 								else:
 									J[i, j] = 0
 
-				#Constitue le vecteur des résidus à partir du vecteur list_index
+				#Constitue le vecteur des résidus et la matrice de pondération à partir du vecteur list_index
 				residu = np.zeros(n)
+				W = np.zeros( (n, n) )
 				for i in range( n ):
 					residu[i] = self.fit.residu.count[list_index[i]]
+					N = self.raw_data.count[list_index[i]]
+					if N == 0:
+						N = 1
+					W[i, i] = 1./N	
+
 
 
 				#Calcul de la matrice des coefficients (JtJ) et du vecteur des solutions (JtR)
 				Jt = np.transpose( J )
-				JtJ = np.matmul( Jt, J ) + gamma * np.eye( m )
-				JtR = np.matmul( Jt, residu )
+				JtJ = np.matmul( Jt, np.matmul( W, J ) ) + gamma * np.eye( m )
+				JtR = np.matmul( Jt, np.matmul( W, residu ) )
 				try:
 					#Factorisation de Cholesky et résolution du système linéaire
 					L = np.linalg.cholesky( JtJ )
@@ -1668,6 +1675,13 @@ class spectre:
 
 		if ret_J == True:
 			return J
+
+		#Calcule et retourne la matrice de covariance
+		Vx = np.linalg.inv( np.matmul( Jt, np.matmul( W, J ) ) )
+
+		self.fit.Vx = Vx
+		self.fit.list_args = list_args
+		self.etat.vardata = True
 		
 
 	def est_noise( self, plot = 0 ):
