@@ -109,7 +109,7 @@ def calc_surf( spectre ):
 	print( 'Fond moyen\t' + str(round(np.mean(spectre.data_back.count) ) ) )
 
 
-def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a = 0, c = 0, pourc_C = 0, alpha = 13.3*2*np.pi/360, anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
+def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', (a, sig_a) = (0,0), (c, sig_c) = (0,0), pourc_C = 0, (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5), anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
 	"""
 	Rajoute ou modifie une phase dans la liste des phases disponibles pour l'analyse.
 	Modifie la variable phase_list.
@@ -181,7 +181,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			return
 
 
-	[mu_m, A, rho, lam, f1, f2] = read_melange( mat, emetteur, raie, affich )
+	[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie, affich )
 
 	if anom_scatt == True: #Facteurs de correction pour dispersion "anormale". Ici pour Cu K-alpha dans Fe [ITC vol. C table 4.2.6.8]
 		if affich == 1:
@@ -190,8 +190,8 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			print( u'\tImaginaire :	f2 = ' + str(f2) )
 
 	else:
-		f1 = 0
-		f2 = 0
+		(f1, sig_f1) = (0,0)
+		(f2, sig_f2) = (0,0)
 
 	if cryst_struct == 'BCC':	#Cubique centré
 		if a == 0 :
@@ -259,9 +259,13 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 
 	elif cryst_struct == 'DC':	#Diamond Cubic
 		if a == 0:
-			a = 5.4309	#Silicium selon CIF 27-1402
+			a = 5.43088
+			sig_a = 4e-5	#Silicium selon CIF 27-1402
+
 		c = 0;
 		V = a**3
+		fV = 1./V**2
+		sig_fV = 6./a**7 * sig_a
 
 		if liste_pics == []:
 			liste_pics =  [ [(1, 1, 1)], [(2, 2, 0)], [(3, 1, 1)], [(4, 0, 0)], [(3, 3, 1)], 
@@ -275,27 +279,34 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		for i in range(len(liste_pics)):
 			(h, k, l) = liste_pics[i][0]
 			d = calc_d( liste_pics[i][0], a )
+			sig_d = sig_a / (h**2 + k**2 + l**2)**0.5
 			theta = np.arcsin( lam / (2*d) )
+			var_theta = (sig_lam**2 + lam**2/d**2*sig_d**2)/(4*d**2*(1-lam**2/(4*d**2)))
+			sig_theta = var_theta**0.5
 			s = 1./(2*d)
-			sF = scatt_f( s, mat ) + f1 + 1j*f2
+			sig_s = sig_d/(2*d**2)
+			sf0, sig_sf0 = scatt_f( s, mat )
+			sF = sf0 + f1 + 1j*f2
 			if (h + k + l) % 2 == 0:	#Somme des indices paire
 				FFmult = 64
 			else:
 				FFmult = 32
 			FF = FFmult*(sF*np.conj(sF)).real
+			sig_FF = FFmult * (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
 			p = liste_p[i]
-			Lf = lor_f( theta )
-			pf = pol_f( theta, alpha )
-			Tf = temp_f( s )
+			Lf, sig_Lf = lor_f( (theta, sig_theta) )
+			pf, sig_pf = pol_f( (theta, sig_theta), (alpha, sig_alpha) )
+			Tf, sig_Tf = temp_f( (s, sig_s) )
 			R = 1./V**2 * FF*p*Lf*pf*Tf
+			sig_R = R*(sig_fV**2/fV**2 + sig_FF**2/FF**2 + sig_Lf**2/Lf**2 + sig_pf**2/pf**2 + sig_Tf**2/Tf**2)**0.5
 			liste_pics[i].append(p)
-			liste_pics[i].append(d)
-			liste_pics[i].append(theta)
-			liste_pics[i].append(FF)
-			liste_pics[i].append(Lf)
-			liste_pics[i].append(pf)
-			liste_pics[i].append(Tf)
-			liste_pics[i].append(R)
+			liste_pics[i].append((d, sig_d))
+			liste_pics[i].append((theta, sig_theta))
+			liste_pics[i].append((FF, sig_FF))
+			liste_pics[i].append((Lf, sig_Lf))
+			liste_pics[i].append((pf, sig_pf))
+			liste_pics[i].append((Tf, sig_Tf))
+			liste_pics[i].append((R, sig_R))
 
 	elif cryst_struct == 'HCP':	#Hexagonal compact
 		V = 3**0.5*a**2*c/2
@@ -376,17 +387,22 @@ def plot_phase( phase, dict_phases, raw_data = [], couleur = 'blue', theta_min =
 
 	R_max = 0
 	for i in range( len( phase_data[5] ) ):
-		R = phase_data[5][i][8]
+		R = phase_data[5][i][8][0]
 		if R > R_max:
 			R_max = R
 	
 	for i in range( len( phase_data[5] ) ):
-		angle_2theta = 2*phase_data[5][i][3] * 360. / (2.*np.pi)
+		angle_2theta=[0,0]
+		angle_2theta[0] = 2*phase_data[5][i][3][0] * 360. / (2.*np.pi)
+		angle_2theta[1] = 2*phase_data[5][i][3][1] * 360. / (2.*np.pi)
 		if raw_data != [] and ( angle_2theta > theta_max or angle_2theta < theta_min ):
 			continue
-		R = phase_data[5][i][8] / R_max
-		plt.plot([angle_2theta, angle_2theta], [0, R], color = couleur)
-		plt.annotate( str( phase_data[5][i][0] ), [angle_2theta, 0.5 * R] )
+		R=[0,0]
+		R[0] = phase_data[5][i][8][0] / R_max
+		R[1] = phase_data[5][i][8][1] / R_max
+		plt.plot([angle_2theta[0], angle_2theta[0]], [0, R[0]], color = couleur)
+		plt.errorbar( angle_2theta[0], R[0], xerr = angle_2theta[1], yerr = R[1], fmt = 'o', color = couleur, ecolor = 'g')
+		plt.annotate( str( phase_data[5][i][0] ), [angle_2theta[0], 0.5 * R[0]] )
 
 	plt.plot( [], [], color = couleur, label = phase )
 	plt.legend()
@@ -451,10 +467,12 @@ def scatt_f( s, mat = 'Fe' ):
 	#Si l'utilisateur fournit une liste d'angle, une récursion est faite pour chacun des angles et un vecteur est retourné
 	if type(s) == np.ndarray or type(s) == list: 
 		s_f = np.array([])
+		err = np.array([])
 
 		for j in range( len(s) ):
-			s_f_temp = scatt_f( s[j], elem )
+			s_f_temp, err_temp = scatt_f( s[j], mat )
 			s_f = np.append( s_f, s_f_temp )
+			sig_sf = np.append( err, err_temp )
 
 	#Ici, un seul angle est étudié
 	elif type(s) == int or type(s) == float or type(s) == np.float64:
@@ -464,12 +482,16 @@ def scatt_f( s, mat = 'Fe' ):
 		if type( mat ) == list:
 			mat_conv( mat, 'a' )
 			s_f_vect = []
+			err_vect = []
 			for i in range( len(mat) - 1):
 				mat_temp = mat[i+1][0]
-				n = mat[i+1][1]
-				s_f_vect.append( scatt_f( s, mat_temp ) * n )
+				n, sig_n = read_nmbr(mat[i+1][2])
+				s_f_temp, err_temp = scatt_f( s, mat_temp )
+				s_f_vect.append( s_f_temp * n )
+				err_vect.append( err_temp * n )
 			
 			s_f = np.sum( s_f_vect )
+			sig_sf = np.sum( err_vect )
 
 		#Un seul élément, substance pure
 		elif type( mat ) == str:
@@ -477,6 +499,7 @@ def scatt_f( s, mat = 'Fe' ):
 			a = X[6]
 			b = X[7]
 			c = X[8]
+			sig_sf = X[11]
 
 			s_f = c
 			for i in range(4):
@@ -485,10 +508,10 @@ def scatt_f( s, mat = 'Fe' ):
 			if s > 2: 
 				print( u'Attention : s > 2, corrélation imprécise' )
 				
-	return s_f
+	return (s_f, sig_sf)
 
 
-def pol_f( theta, alpha = 13.3*2*np.pi/360 ):
+def pol_f( (theta, sig_theta), (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5) ):
 	"""
 	Fonction calculant le facteur de polarisation [ITC vol. C., sec. 6.2.2]
 
@@ -506,10 +529,16 @@ def pol_f( theta, alpha = 13.3*2*np.pi/360 ):
 
 	"""
 
-	return (1. + np.cos(2.*alpha)**2. * np.cos(2.*theta)**2. ) /  (1. + np.cos(2.*alpha)**2. )
+	pf =  (1. + np.cos(2.*alpha)**2. * np.cos(2.*theta)**2. ) /  (1. + np.cos(2.*alpha)**2. )
+	k = (np.cos(2*alpha))**2
+	sig_k = 4*np.cos(2*alpha)*np.sin(2*alpha)*sig_alpha
+	dpfdk = (1 + (np.cos(2*theta))**2)/(1+k) + (1 + k*(np.cos(2*theta))**2)/(1+k)**2
+	dpfdtheta = 4*k/(1+k)*np.cos(2*theta)*np.sin(2*theta)
+	sig_pf = (dpfdk**2*sig_k**2 + dpfdtheta**2*sig_theta**2)**0.5
+	return (pf, sig_pf)
 
 
-def lor_f( theta ):
+def lor_f( (theta, sig_theta) ):
 	"""
 	Fonction calculant le facteur de Lorentz [ITC vol. C, sec. 6.2.5]
 
@@ -520,10 +549,11 @@ def lor_f( theta ):
 
 	"""
 
-	return 1 / (np.sin(theta)**2 * np.cos(theta))
+	Lf = 1 / (np.sin(theta)**2 * np.cos(theta))
+	sig_Lf = (-2/(np.sin(theta))**3 + 1/(np.sin(theta)*(np.cos(theta))**2))*sig_theta
+	return (Lf, sig_Lf)
 
-
-def temp_f( s, mat = 'Fe', T = 293. ):
+def temp_f( (s, sig_s), mat = 'Fe', (T, sig_T) = (293., 1) ):
 	"""
 	Fonction calculant le facteur de la température exp(-2*M)  [Cullity]
 
@@ -549,11 +579,17 @@ def temp_f( s, mat = 'Fe', T = 293. ):
 
 	if type( mat ) == str:
 		X = read_el( mat )
-		DebyeT = X[5]
-		A = X[2]
+		DebyeT, sig_DebyeT = X[5]
+		A, sig_A = X[2]
 		x = DebyeT / T
-		M = 1.1490292193e4 * T / (A*DebyeT**2) * (phiofx(x) + x/4)*s**2
-		return np.exp(-2*M)
+		sig_x = (sig_DebyeT**2/T**2 + DebyeT**2/T**4*sig_T**2)**0.5
+		c = phiofx(x) + x/4
+		sig_c = ((-phiofx(x)/x + 1/(np.exp(x)-1))**2 + 1./16)*sig_x
+		M = 1.1490292193e4 * T / (A*DebyeT**2) * c * s**2
+		sig_M = M * (sig_T**2/T**2 + 4*sig_DebyeT**2/DebyeT**2 + sig_c**2/c**2 + 4*sig_s**2/s**2 + sig_A**2/A**2)**0.5
+		Tf = np.exp(-2*M)
+		sig_Tf = 2*np.exp(-2*M)*sig_M
+		return (Tf, sig_Tf)
 
 	elif type( mat ) == list:
 		mat_conv( mat, 'a' )
@@ -561,7 +597,7 @@ def temp_f( s, mat = 'Fe', T = 293. ):
 		for i in range( len(mat) - 1):
 			mat_temp = mat[i+1][0]
 			n = mat[i+1][1]
-			T_f_vect.append( temp_f( s, mat_temp, T ) * n )
+			T_f_vect.append( temp_f( (s, sig_s), mat_temp, (T, sig_T) ) * n )
 		
 		return np.sum( T_f_vect )
 
@@ -605,7 +641,7 @@ def phiofx(x):
 
 
 
-def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
+def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0, ret_incert = False ):
 	"""
 
 	Retourne les informations pour l'analyse de DRX d'un élément
@@ -628,6 +664,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 			a = [a1, a2, a3, a4]
 			b = [b1, b2, b3, b4]
 		f1, f2 :	Facteurs réel et imaginaire de correction du facteur de diffusion	
+		Les valeurs sont retournées avec leur incertitude
 
 	"""
 	#Choisit la bonne colonne pour la lecture des informations
@@ -635,10 +672,10 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		rowno = 4
 	elif emetteur == 'Cu':
 		rowno = 6
-		rowno2 = 22
+		rowno2 = 23
 	elif emetteur == 'Co':
 		rowno = 8
-		rowno2 = 24
+		rowno2 = 25
 	elif emetteur == 'Cr':
 		rowno = 10
 	else:
@@ -664,37 +701,40 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		csvreader = csv.reader( csvfile, delimiter = ',' )
 		for row in csvreader:
 			if row[0] == 'Lambda':
-				lam = float( row[rowno] )
+				lam = read_nmbr( row[rowno] )
 			elif row[0] == absorbeur:
 				Z = int( row[1] )
-				A = float( row[2] )
-				rho = float( row[3] )
-				mu_m = float( row[rowno] )
-				DebyeT = float( row[12] )
+				A = read_nmbr( row[2] )
+				rho = read_nmbr( row[3] )
+				mu_m = read_nmbr( row[rowno] )
+				DebyeT = read_nmbr( row[12] )
 				a = [ float( row[13] ), float( row[14] ), float( row[15] ), float( row[16] ) ]
 				b = [ float( row[17] ), float( row[18] ), float( row[19] ), float( row[20] ) ]
 				c = float( row[21] )
-				f1 = float( row[rowno2] )
-				f2 = float( row[rowno2 + 1] )
-				mu_l = mu_m*rho
+				incertsf = float( row[22] )
+				f1 = read_nmbr( row[rowno2] )
+				f2 = read_nmbr( row[rowno2 + 1] )
+				mu_l_val = mu_m[0]*rho[0]
+				mu_l_sd = mu_l_val*( (mu_m[1]/mu_m[0])**2 + (rho[1]/rho[0])**2 )**0.5
+				mu_l = (mu_l_val, mu_l_sd)
 				if affich == 1 or affich == 2 or affich == 3:
 					print( u'\n----\nÉmetteur :\t\t' + emetteur + ' K-' + raie )
-					print( 'Longueur d\'onde :\t' + str( lam ) +'\tAngstrom' )
+					print( 'Longueur d\'onde :\t' + write_nmbr(lam) +'\tAngstrom' )
 					print( '\n' )		
 					print( 'Absorbeur :\t\t' + absorbeur )
 					print( u'Numéro atomique :\t' + str( Z ) )
-					print( 'Masse atomique :\t' + str( A ) +'\tg/mol' )
-					print( u'Densité :\t\t' + str( rho ) + '\tg/cm3' )
-					print( 'Coeff. abs. mass. :\t' + str( mu_m ) + '\tcm2/g' )
-					print( 'Coeff. abs. lin. :\t' + str( mu_l ) + '\tcm-1')
-					print( 'Temp. de Debye :\t' + str( DebyeT ) + '\tK' )
+					print( 'Masse atomique :\t' + write_nmbr( A ) + '\tg/mol' )
+					print( u'Densité :\t\t' + write_nmbr( rho ) + '\tg/cm3' )
+					print( 'Coeff. abs. mass. :\t' + write_nmbr( mu_m ) + '\tcm2/g' )
+					print( 'Coeff. abs. lin. :\t' + write_nmbr( mu_l ) + '\tcm-1')
+					print( 'Temp. de Debye :\t' + write_nmbr( DebyeT ) + '\tK' )
 					print( 'Facteurs de correction pour diffusion anormale :' )
-					print( '\tf1 :\t\t' + str( f1 ) )
-					print( '\tf2 :\t\t' + str( f2 ) )
+					print( '\tf1 :\t\t' + write_nmbr( f1 ) )
+					print( '\tf2 :\t\t' + write_nmbr( f2 ) )
 
 				if affich == 2 or affich == 3:
-					z=np.arange(0, 5/mu_l, 0.05/mu_l)
-					I=np.exp( -mu_l*z )
+					z=np.arange(0, 5/mu_l[0], 0.05/mu_l[0])
+					I=np.exp( -mu_l[0]*z )
 					leg = emetteur + ' K-' + raie + ' dans ' + absorbeur  
 					plt.plot( z, I, label = leg)
 					plt.xlabel( 'Epaisseur (cm)' )
@@ -702,15 +742,15 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0 ):
 					plt.legend( )
 					if affich == 2:
 						plt.show()
-				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c, f1, f2]
+				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c, f1, f2, incertsf]
 
 	print 'Erreur, absorbeur inexistant'		
 
 
-def mat_conv( mat, type_fract, affich = 0 ):
+def mat_conv( mat, affich = 0 ):
 	
 	"""
-	Convertit la composition chimique d'un matériau de massique vers atomique et vice-versa
+	Complète les informations sur un matériau en calculant la balance et les concentrations atomiques
 	Les caractéristiques du matériau doivent être contenues dans le fichier de donnees
 	Intrants :
 		mat :		Composition chimique du materiau. Format de type list. Voir ci-dessous
@@ -720,58 +760,80 @@ def mat_conv( mat, type_fract, affich = 0 ):
 		mat_conv :	Composition chimique convertie
 
 	Formats :
-		materiau :	Exemple de format de liste. 'B' signifie la balance
+		materiau :	Exemple de format de liste accepté. 'B' signifie la balance
 				[ [ 'Fe-0.4C'   , 'm'		],
-				  [ 'C'		, 0.004		],
+				  [ 'C'		, 0.0040(5)	],
 				  [ 'Fe'	, 'B'		] ]
+
+		matériau (retourné) :
+				[ [ 'Fe-0.4C'   , 'm'		, 'a'			],
+				  [ 'C'		, 0.0040(5)	, 1.83(22)e-02		],
+				  [ 'Fe'	, 9.9600(50)e-01, 9.816696(90)e-01	] ]
 	"""
 
-	if type_fract == mat[0][1]:
+	if len( mat[0] ) == 3:
 		if affich == 1:
 			print( u'Déjà dans le bon format' )
-		tot = 0.
-		index_B = 0
-		for i in range( len(mat) - 1 ):
-			if mat[i + 1][1] == 'B':
-				index_B = i + 1
-			else:
-				tot += mat[i + 1][1]
-		if index_B != 0:
-			mat[index_B][1] = 1 - tot	
-		return mat
+		
+		return
 
-	elif type_fract == 'a' and mat[0][1] == 'm':
+	tot = 0.
+	var_B = 0.
+	index_B = 0
+	for i in range( len(mat) - 1 ):
+		if mat[i + 1][1] == 'B':
+			index_B = i + 1
+		else:
+			x, sig_x = read_nmbr( mat[i + 1][1] )
+			tot += x
+			var_B += sig_x**2
+	if index_B != 0:
+		val_B = 1 - tot	
+		mat[index_B][1] = write_nmbr( val_B, var_B**0.5 )
+
+	if mat[0][1] == 'm':
+		#Conversion qté massique en qté atomique
 		tot = 0.
 		n_vec = []
 		for i in range( len(mat) - 1 ):
 			if mat[i + 1][1] == 'B':
 				mat = mat_conv( mat, 'm' )
 			
-			A = read_el( mat[i + 1][0], 'Cu', 'a')[2]
-			tot += mat[i + 1][1]
-			n_vec.append( mat[i + 1][1] / A )
+			Ai, sig_Ai = read_el( mat[i + 1][0], 'Cu', 'a')[2]
+			wi, sig_wi = read_nmbr( mat[i + 1][1] )
+			n_vec.append( wi / Ai )
 
+		Amel = 1./sum(n_vec)
 		for i in range( len( n_vec ) ):
-			mat[i + 1][1] = n_vec[i]/sum(n_vec)
+			ni = n_vec[i]*Amel
+			Ai, sig_Ai = read_el( mat[i + 1][0], 'Cu', 'a')[2]
+			wi, sig_wi = read_nmbr( mat[i + 1][1] )
+			var_ni = (1. - ni)**2/Ai**2*(Amel**2*sig_wi**2 + ni**2*sig_Ai**2)
+			mat[i + 1] = [ mat[i + 1][0], mat[i + 1][1], write_nmbr( ni, var_ni**0.5 ) ]
 
-		mat[0][1] = 'a'
+		mat[0] = [mat[0][0], 'm', 'a']
 		return mat
 
-	elif type_fract == 'm' and mat[0][1] == 'a':
+	elif mat[0][1] == 'a':
 		tot = 0.
-		n_vec = []
+		w_vec = []
 		for i in range( len(mat) - 1 ):
 			if mat[i + 1][1] == 'B':
 				mat = mat_conv( mat, 'a' )
 			
-			A = read_el( mat[i + 1][0], 'Cu', 'a')[2]
-			tot += mat[i + 1][1]
-			n_vec.append( mat[i + 1][1] * A )
+			Ai, sig_Ai = read_el( mat[i + 1][0], 'Cu', 'a')[2]
+			ni, sig_ni = read_nmbr( mat[i + 1][1] )
+			w_vec.append( ni * Ai )
 
-		for i in range( len( n_vec ) ):
-			mat[i + 1][1] = n_vec[i]/sum(n_vec)
+		Amel = sum(w_vec)
+		for i in range( len( w_vec ) ):
+			wi = w_vec[i]/Amel
+			Ai, sig_Ai = read_el( mat[i + 1][0], 'Cu', 'a')[2]
+			ni, sig_ni = read_nmbr( mat[i + 1][1] )
+			var_wi = (1. - wi)**2/Amel**2*(Ai**2*sig_ni**2 + ni**2*sig_Ai**2)
+			mat[i + 1] = [ mat[i + 1][0], write_nmbr( ni, var_ni**0.5 ), mat[i + 1][1] ]
 
-		mat[0][1] = 'm'
+		mat[0] = [mat[0][0], 'm', 'a']
 		return mat
 
 def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
@@ -790,12 +852,13 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		rho :		Densité moyenne (g/cm3)
 		lam :		Longueur d'onde du rayonnement incident (Angstrom)
 		f1, f2 :	Facteurs réel et imaginaire de correction du facteur de diffusion	
+		Les valeurs et les écarts-types sont retournés
 	
 	"""
 	mat_conv( mat, 'm' )
 	V_vec = []
 	n_vec = []
-	m_vec = []
+	w_vec = []
 	mu_m_vec = []
 	f1_vec = []
 	f2_vec = []
@@ -810,22 +873,58 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		f1 = X[9]
 		f2 = X[10]
 
-		m = mat[i + 1][1]
-		m_vec.append( m )
-		n_vec.append( m / A )
-		V_vec.append( m / rho )
-		mu_m_vec.append( m * mu_m )
-		f1_vec.append( f1 * m / A )
-		f2_vec.append( f2 * m / A )
+		w, sig_w = read_nmbr( mat[i + 1][1] )
+		n_vec.append( w / A[0] )
+		V_vec.append( w / rho[0] )
+		mu_m_vec.append( w * mu_m[0] )
+		f1_vec.append( f1[0] * w / A[0] )
+		f2_vec.append( f2[0] * w / A[0] )
 
 	V_tot = np.sum( V_vec )
 	n_tot = np.sum( n_vec )
-	rho = 1 / V_tot
-	A = 1 / n_tot
-	mu_m = np.sum( mu_m_vec )
-	mu_l = mu_m * rho
-	f1 = np.sum( f1_vec ) / n_tot
-	f2 = np.sum( f2_vec ) / n_tot
+	rho_mel = 1 / V_tot
+	A_mel = 1 / n_tot
+	mu_m_mel = np.sum( mu_m_vec )
+	mu_l_mel = mu_m_mel * rho_mel
+	f1_mel = np.sum( f1_vec ) / n_tot
+	f2_mel = np.sum( f2_vec ) / n_tot
+
+	var_rho_vec = []
+	var_A_vec = []
+	var_mu_m_vec = []
+	var_f1_mel_vec =[]
+	var_f2_mel_vec =[]
+
+	for i in range( len(mat) - 1):
+		X = read_el( mat[i + 1][0], emetteur, raie )
+		mu_mi, sig_mu_mi = X[0]
+		Zi = X[1]
+		Ai, sig_Ai = X[2]
+		rhoi, sig_rhoi = X[3]
+		lam, sig_lam = X[4]
+		f1i, sig_f1i = X[9]
+		f2i, sig_f2i = X[10]
+
+		wi, sig_wi = read_nmbr( mat[i + 1][1] )
+		var_rho_vec.append( rho_mel**4*(wi**2*sig_rhoi**2/rhoi**4 + sig_wi**2/rhoi**2 ) )
+		var_A_vec.append( A_mel**4*(wi**2*sig_Ai**2/Ai**4 + sig_wi**2/rhoi**2) )
+		var_mu_m_vec = wi**2 * sig_mu_mi**2 + mu_mi**2 * sig_wi**2
+		var_f1_mel_vec.append( (f1_mel - f1i)**2/Ai**2 * (sig_wi**2 + wi**2/Ai**2*sig_Ai**2) )
+		var_f2_mel_vec.append( (f2_mel - f2i)**2/Ai**2 * (sig_wi**2 + wi**2/Ai**2*sig_Ai**2) )
+	
+	var_rho_mel = np.sum( var_rho_vec )			
+	var_A_mel = np.sum( var_A_vec )
+	var_mu_m_mel = np.sum( var_mu_m_vec )
+	var_f1_mel = np.sum( var_f1_mel_vec )
+	var_f2_mel = np.sum( var_f2_mel_vec )
+	var_mu_l_mel = mu_l_mel**2*( var_mu_m_mel/mu_m_mel**2 + var_rho_mel/rho_mel**2 )
+
+	mu_m = (mu_m_mel, var_mu_m_mel**0.5)
+	mu_l = (mu_l_mel, var_mu_l_mel**0.5)
+	A = (A_mel, var_A_mel**0.5)
+	rho = (rho_mel, var_rho_mel**0.5)
+	f1 = (f1_mel, var_f1_mel**0.5)
+	f2 = (f2_mel, var_f2_mel**0.5)
 		
 	if raie == 'b':
 		raie = 'Beta'
@@ -834,15 +933,15 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 
 	if affich == 1 or affich == 2 or affich == 3:
 		print( u'\n----\nÉmetteur :\t\t' + emetteur + ' K-' + raie )
-		print( 'Longueur d\'onde :\t' + str( lam ) +'\tAngstrom' )
+		print( 'Longueur d\'onde :\t' + write_nmbr( lam, sig_lam ) +'\tAngstrom' )
 		print( '\nAbsorbeur :\t\t' + mat[0][0] )
-		print( 'Masse atomique :\t' + str( A ) +'\tg/mol' )
-		print( u'Densité :\t\t' + str( rho ) + '\tg/cm3' )
-		print( 'Coeff. abs. mass. :\t' + str( mu_m ) + '\tcm2/g' )
-		print( 'Coeff. abs. lin. :\t' + str( mu_l ) + '\tcm-1')
+		print( 'Masse atomique :\t' + write_nmbr( A ) +'\tg/mol' )
+		print( u'Densité :\t\t' + write_nmbr( rho ) + '\tg/cm3' )
+		print( 'Coeff. abs. mass. :\t' + write_nmbr( mu_m ) + '\tcm2/g' )
+		print( 'Coeff. abs. lin. :\t' + write_nmbr( mu_l ) + '\tcm-1')
 		print( 'Facteurs de correction pour diffusion anormale :' )
-		print( '\tf1 :\t\t' + str( f1 ) )
-		print( '\tf2 :\t\t' + str( f2 ) )
+		print( '\tf1 :\t\t' + write_nmbr( f1 ) )
+		print( '\tf2 :\t\t' + write_nmbr( f2 ) )
 
 	if affich == 2 or affich == 3:
 		z=np.arange(0, 5/mu_l, 0.05/mu_l)
@@ -855,7 +954,7 @@ def read_melange( mat, emetteur = 'Cu', raie = 'a', affich = 0 ):
 		if affich == 2:
 			plt.show()
 
-	return [mu_m, A, rho, lam, f1, f2]
+	return [mu_m, A, rho, (lam, sig_lam), f1, f2]
 
 def quant( spectre, liste_phases, affich = 1 ):
 	"""
@@ -1074,7 +1173,6 @@ def list_var( spectre ):
 	La fonction imprime à l'écran les clés, les variables, les valeurs, les variances et les écarts-type.
 	Les clés peuvent être utilisés pour la fonction 'corr_var', qui retourne les variances et écarts-types si désiré.
 
-	
 	"""
 	
 	if not spectre.etat.vardata:
@@ -1145,7 +1243,17 @@ def list_var( spectre ):
 def corr_var( spectre, cle1, cle2, affich = 1 ):
 	"""
 
-	Description à compléter
+	Affiche des données comparatives sur deux variables de régression.
+
+	Intrants :
+		spectre : source des données
+		cle1, cle2 : clés des variables à comparer
+		affich = 1 : Affiche à l'écran les variables, les valeurs, les variances, les écarts-types, la covariance et la corrélation
+
+	Extrants :	
+		[ [valeur1, variance1],
+		  [valeur2, variance2],
+		  covariance		]
 
 	"""
 	if not spectre.etat.vardata:
@@ -1213,3 +1321,427 @@ def corr_var( spectre, cle1, cle2, affich = 1 ):
 	v1 = [valeur1, var1]
 	v2 = [valeur2, var2]
 	return [v1, v2, covar]
+
+def constr_Vx( spectre, liste_cles ):
+	"""
+
+	Construit la matrice de variance-covariance des clés entrées dans la liste des clés.
+
+	Intrants :
+		spectre : source des données
+		liste_cles = [cle1, cle2, ... ] : liste des clés
+
+	Extrants :
+		x = [x1, x2, ... ] : vecteur contenant les valeurs des variables de liste_cles
+		Vx = Matrice de variance-covariance des variables
+
+	"""
+	
+	if not spectre.etat.vardata:
+		print( u'Faire une itération pour générer les données statistiques nécessaires. Ne pas oublier d\'inclure tous les pics et l\'arrière-plan' )
+		return
+
+	n = len( spectre.fit.Vx )
+	m = len( liste_cles )
+	
+	Vx = np.zeros( (m, m) )
+	x = np.zeros( m )
+	for i in range( m ):
+		A = corr_var( spectre, liste_cles[i], liste_cles[i], affich=0 )
+		x[i] = A[0][0]
+		Vx[i][i] = A[0][1]
+		for j in range( m ):
+			if i == j:
+				continue
+
+			A = corr_var( spectre, liste_cles[i], liste_cles[j], affich=0 )
+			Vx[i][j] = A[2]
+			
+	return x, Vx		
+
+def param_anal( spectre, phase_id, param, dict_phases = {} ):
+	"""
+
+	Analyse et trace les données sélectionnées par l'utilisateur avec les incertitudes correspondantes
+
+	Intrants :
+		spectre : Source des données de régression
+		phase_id : Identification de la phase analysée
+		param : Données à analyser. Choix possibles : 'I0lg', 'beta_g', 'beta_l', 'k', 'A', 'I', 'beta', 'FWHM', 'form_fact'
+		dict_phases : Dictionnaire des phases requis pour certaines analyses
+
+	Extrants :
+		x, y, x_err, y_err : Valeurs x et y avec écarts-types respectifs
+
+	"""
+
+	x = []
+	y = []
+	x_err = []
+	y_err = []
+	if param == 'I0lg':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$I_{0lg}$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				x.append(spectre.peak_list[i][1][2])
+				y.append(spectre.peak_list[i][1][1])
+				x_cle = 'p' + str(pic) + '2'
+				y_cle = 'p' + str(pic) + '1'
+				A = corr_var( spectre, x_cle, y_cle, affich=0 )
+				x_err.append( A[0][1]**0.5 )
+				y_err.append( A[1][1]**0.5 )
+
+	elif param == 'beta_g':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$\beta_{g}$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				x.append(spectre.peak_list[i][1][2])
+				y.append(spectre.peak_list[i][1][3])
+				x_cle = 'p' + str(pic) + '2'
+				y_cle = 'p' + str(pic) + '3'
+				A = corr_var( spectre, x_cle, y_cle, affich=0 )
+				x_err.append( A[0][1]**0.5 )
+				y_err.append( A[1][1]**0.5 )
+
+	elif param == 'beta_l':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$\beta_{l}$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				x.append(spectre.peak_list[i][1][2])
+				y.append(spectre.peak_list[i][1][4])
+				x_cle = 'p' + str(pic) + '2'
+				y_cle = 'p' + str(pic) + '4'
+				A = corr_var( spectre, x_cle, y_cle, affich=0 )
+				x_err.append( A[0][1]**0.5 )
+				y_err.append( A[1][1]**0.5 )
+	
+	elif param == 'k':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$k$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_th, cle_bg, cle_bl] )
+				beta_g = X[1]
+				beta_l = X[2]
+				k = beta_l/(beta_g*np.pi**0.5)
+				J = np.array([0, -k/beta_g, k/beta_l])
+				var_k = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[0] )
+				y.append( k )
+				x_err.append( Vx[0][0]**0.5 )
+				y_err.append( var_k**0.5 )
+
+	elif param == 'A':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$A$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				A = I0lg**2*beta_g*beta_l
+				J = np.array([2*A/I0lg, 0, A/beta_g, A/beta_l])
+				var_A = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[1] )
+				y.append( A )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( var_A**0.5 )
+
+				
+	elif param == 'I':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$I$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				z = 1j*beta_l/(np.pi**0.5*beta_g)
+				dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
+				dzdbg = -z/beta_g
+				dzdbl = z/beta_l
+				I = I0lg**2*beta_l*wofz(z).real
+				J = np.zeros(4)
+				J[0] = 2*I/I0lg
+				J[2] = beta_l*I0lg**2*( dwdz*dzdbg ).real
+				J[3] = I/beta_l + beta_l*I0lg**2*( dwdz*dzdbl ).real
+				var_I = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[1] )
+				y.append( I )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( var_I**0.5 )
+
+	elif param == 'beta':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$I$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				z = 1j*beta_l/(np.pi**0.5*beta_g)
+				dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
+				dzdbg = -z/beta_g
+				dzdbl = z/beta_l
+				beta = beta_g / wofz( z ).real
+				J = np.zeros(4)
+				J[2] = 1 / wofz( z ).real - beta_g*( 1/(wofz( z ))**2 * dzdbg ).real
+				J[3] = -beta_g*( 1/(wofz( z )**2) * dzdbl ).real
+				var_beta = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[1] )
+				y.append( beta )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( var_beta**0.5 )
+
+	elif param == 'FWHM':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$FWHM (^o)$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				k = beta_l/(beta_g*np.pi**0.5)
+				FWHM = 2*beta_g/np.pi**0.5*(1+k**2)**0.5
+				J = np.zeros(4)
+				J[2] = 2/np.pi**0.5*(1+k**2)**0.5 - 2*k**2/(np.pi*(1+k**2))**0.5
+				J[3] = 2*k/np.pi/(1+k**2)**0.5
+				var_FWHM = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[1] )
+				y.append( FWHM )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( var_FWHM**0.5 )
+
+	elif param == 'form_fact':
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'Form factor $=\frac{FWHM}{\beta} (^o)$ reg.'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				k = beta_l/(beta_g*np.pi**0.5)
+				FWHM = 2*beta_g/np.pi**0.5*(1+k**2)**0.5
+				z = 1j*beta_l/(np.pi**0.5*beta_g)
+				dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
+				dzdbg = -z/beta_g
+				dzdbl = z/beta_l
+				beta = beta_g / wofz( z ).real
+				form_fact = FWHM/beta
+				dFWHMdbetag = 2/np.pi**0.5*(1+k**2)**0.5 - 2*k**2/(np.pi*(1+k**2))**0.5
+				dFWHMdbetal = 2*k/np.pi/(1+k**2)**0.5
+				dbetadbetag = 1 / wofz( z ).real - beta_g*( 1/(wofz( z ))**2 * dzdbg ).real
+				dbetadbetal = -beta_g*( 1/(wofz( z )**2) * dzdbl ).real
+				J = np.zeros(4)
+				J[2] = 1/beta*dFWHMdbetag - FWHM/beta**2*dbetadbetag
+				J[2] = 1/beta*dFWHMdbetal - FWHM/beta**2*dbetadbetal
+				var_form_fact = np.matmul( np.matmul( J, Vx ), np.transpose(J) )
+				x.append( X[1] )
+				y.append( form_fact )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( var_form_fact**0.5 )
+	plt.errorbar( x, y, xerr=x_err, yerr=y_err, fmt = 'o', ecolor = 'g' )
+	plt.xlabel( x_label )
+	plt.ylabel( y_label )
+	plt.show()
+	return x, y, x_err, y_err
+
+def read_nmbr( nmbr ):
+	"""
+	
+	Lit une chaîne de caractère contenant le nombre et l'écart-type et le transforme en tuple contenant ces deux données.
+
+	Intrants :
+		nmbr : Chaîne de caractères de format '1.234(56)e+78'
+
+	Extrants :
+		(nombre, incertitude)
+
+	"""
+
+	def isint( car ):
+		try:
+			test = int(car)
+			return True
+		except ValueError:
+			return False
+	
+	chiffre = False
+	virgule = False
+	exposant = 0
+	nombre_str = ''
+	is_incert = False
+	is_exposant = False
+	exp_str = ''
+	incert_str = ''
+	negatif = False
+
+	for i in range( len(nmbr) ):
+		car = nmbr[i]
+		if car == '-' or car == '.' or car == '(' or car == ')' or car == 'e' or car == '+':
+			pass
+		else:
+			if not isint( car ):
+				print('Erreur de format')
+				return
+
+		if i == 0 and car == '-':
+			negatif = True
+			continue
+		
+		elif chiffre == False and virgule == False:
+			if car == '0':
+				pass
+			elif car == '.':
+				exposant -= 1
+				virgule = True
+			elif isint( car ):
+				nombre_str += car + '.'
+				chiffre = True
+			else:
+				print('Erreur de format')
+				return
+
+		elif chiffre == False and virgule == True:	
+			if car == '0':
+				exposant -= 1
+			elif isint( car ):
+				chiffre = True
+				nombre_str += car + '.'
+			else:
+				print('Erreur de format')
+				return
+
+		elif is_exposant == True:
+			if isint( car ) or car == '-':
+				exp_str += car
+				
+		elif is_incert == True:
+			if isint( car ):
+				incert_str += car
+			elif car == ')':
+				is_incert = False
+
+		elif chiffre == True and virgule == False:
+			if car == '.':
+				virgule = True
+			elif isint( car ):
+				nombre_str += car
+				exposant += 1
+			elif car == '(':
+				is_incert = True
+			elif car == 'e' or car == 'E':
+				is_exposant = True
+			else:
+				print('Erreur de format')
+				return
+		
+		elif chiffre == True and virgule == True:
+			if isint( car ):
+				nombre_str += car
+			elif car == '(':
+				is_incert = True
+			elif car == 'e' or car == 'E':
+				is_exposant = True
+			else:
+				print('Erreur de format')
+				return
+
+	if exp_str == '':
+		pass
+	else:
+		exposant += int( exp_str )
+
+	nombre = float( nombre_str )*10**exposant 
+	exp_incert = exposant - len( nombre_str ) + 2
+	
+	if incert_str == '':
+		incert = 0
+	else:
+		incert = float(incert_str)*10**exp_incert
+	
+	return( nombre, incert )
+	
+def write_nmbr( nombre, incert = 0, ndec = 8 ):
+	"""
+
+	Écrit une chaîne de caractère contenant le nombre et l'écart-type à partir d'un tuple contenant ces deux données.
+
+	Intrants :
+		nombre 
+		incertitude (0 par défaut, si c'est le cas, la variable est considérée comme sans incertitude)
+		ndec = 8 : nombre de décimales à afficher dans le cas où il n'y a pas d'incertitude.
+
+	Extrants :
+		Chaîne de caractères de format '1.234(56)e+78'
+
+	"""
+
+
+	if type(nombre) == tuple and len(nombre) == 2:
+		incert = nombre[1]
+		nombre = nombre[0]
+	if incert == 0:
+		return '{:.{}e}'.format( nombre, ndec )
+	
+	expn = np.floor( np.log10( nombre ) )
+	expi = np.floor( np.log10( incert ) )
+	nsig = int(expn - expi + 1)
+	nbr_str = '{:.{}e}'.format( nombre, max(nsig,0) )
+	incert_str = '{:.{}e}'.format( incert, 1 )
+	incert_parent = incert_str[0] + incert_str[2]
+	if nsig == 0:
+		return nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
+	elif nsig < 0:
+		nzeros = 0 - nsig
+		for i in range(nzeros):
+			incert_parent = incert_parent + '0'
+
+		return nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
+	else:
+		return nbr_str[:(nsig+2)] + '(' + incert_parent + ')' + nbr_str[(nsig+2):]
