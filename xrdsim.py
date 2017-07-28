@@ -452,42 +452,6 @@ class spectre:
 					else:
 						self.peak_list[j][3] = not self.peak_list[j][3]
 
-#	def split_peak( self, no_seq, ratio, delta_theta, plot = 0 ):
-#		if self.etat.peak_list == False:
-#			print( 'Aucune liste de pics' )
-#			return
-#		
-#		for i in range( len( self.peak_list ) ):
-#			if self.peak_list[i][0] == no_seq:
-#				pic_index = i
-#
-#		if len( self.peak_list[pic_index][1] ) == 0:
-#			print( u'Faire une approximation avant de séparer le pic' )
-#			return
-#
-#		PSF = self.peak_list[pic_index][1][0]
-#		if PSF == 'g':
-#			th_init = self.peak_list[pic_index][2] 	
-#			th0 = self.peak_list[pic_index][1][2]
-#			th1 = th0 + delta_theta
-#			th2 = th0 - ratio**2/(1 - ratio**2) * delta_theta
-#			I0 = self.peak_list[pic_index][1][1]
-#			I1 = ratio*I0
-#			I2 = (1 - ratio**2)**0.5*I0
-#			c0 = self.peak_list[pic_index][1][3]
-#			c1 = ratio*c0
-#			c2 = (1 - ratio**2)**0.5*c0
-#
-#			no_seq_nouv = self.add_peak(th1)
-#			self.peak_list[len(self.peak_list)-1][1] = ['g', I1, th1, c1]
-#			self.peak_list[pic_index][1][1] = I2
-#			self.peak_list[pic_index][1][2] = th2
-#			self.peak_list[pic_index][1][3] = c2
-#			return no_seq_nouv
-			
-
-	
-
 	def trace_peak( self, plot = 1, tag = 1 ):
 		"""
 		Permet de visualiser les données brutes, les données lissées et la position des pics enregistrés
@@ -688,7 +652,7 @@ class spectre:
 
 			if corr_LP == True:
 				th_b_rad = th0*np.pi/360.
-				LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+				LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 				I = I/LP
 
 			if plot == 3:
@@ -729,7 +693,7 @@ class spectre:
 		self.clean_back_pts()
 
 
-	def split_Kalpha( self, no_seq, mat = mater.mat4340, emetteur = 'Cu', raie = 'a', plot = 0 ):
+	def split_Kalpha( self, no_seq, plot = 0 ):
 		"""
 		À partir des paramètres de la PSF 'v2k', des propriétés du matériau et des rayons X incidents, retourne des fonctions lambda.
 		Ces fonctions sont utilisées seulement par fit_calcul, afin de tracer les fonctions et de calculer le résidu.
@@ -739,8 +703,6 @@ class spectre:
 
 		Args :
 			no_seq : Numéro séquentiel du pic calculé
-			mat : Matériau de l'échantillon
-			emetteur, raie : Données sur les rayons X incidents
 			plot : 1 pour afficher les résultats
 
 		Retourne :
@@ -762,12 +724,10 @@ class spectre:
 		phase_id = self.peak_list[pic_index][4]
 		hkl = self.peak_list[pic_index][5]
 
-		[mu_m, A, rho, lam, f_1, f_2] = xrdanal.read_melange( mat, emetteur, raie )
 	
-		if emetteur == 'Cu' and raie == 'a':
-			lam_1 = 1.540562
-			lam_2 = 1.544390
-			lam_3 = 1.53416
+		lam_1 = 1.540562
+		lam_2 = 1.544390
+		lam_3 = 1.53416
 
 		
 		if PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
@@ -788,8 +748,8 @@ class spectre:
 				ratio_alph = 0.4457
 
 			t2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(t0*np.pi/360) )
-			LP1 = xrdanal.pol_f( t0 * np.pi/360 ) * xrdanal.lor_f( t0 * np.pi/360 )
-			LP2 = xrdanal.pol_f( t2 * np.pi/360 ) * xrdanal.lor_f( t2 * np.pi/360 )
+			LP1 = xrdanal.pol_f( (t0 * np.pi/360, 0) )[0] * xrdanal.lor_f( (t0 * np.pi/360, 0) )[0]
+			LP2 = xrdanal.pol_f( (t2 * np.pi/360, 0) )[0] * xrdanal.lor_f( (t2 * np.pi/360, 0) )[0]
 			if self.fit.corr_LP == False:
 				ratio_alph = ratio_alph * LP2/LP1
 				
@@ -833,7 +793,7 @@ class spectre:
 			return f, f1, f2, f3
 
 
-	def fit_calcul( self, plot = 0, plotPSF = 0, emetteur = 'Cu', raie = 'a', mat = mater.mat4340 ):
+	def fit_calcul( self, plot = 0, plotPSF = 0 ):
 		
 		"""
 
@@ -844,8 +804,6 @@ class spectre:
 		Args :
 			plot : Affiche la modélisation, les données brutes et le résidu si plot = 1
 			plotPSF : Si égale 1, trace séparément toutes les PSF
-			emetteur, raie : Données des rayons X incidents. Requis seulement si une ou plus des PSF est de type 'v2k'
-			mat : Données sur le matériau. Requis seulement si une ou plus des PSF est de type 'v2k'
 
 		Stocke les données dans la structure self.fit :
 			self.fit.data_reg : 	Spectre calculé
@@ -863,7 +821,7 @@ class spectre:
 			return
 		
 		if self.fit.corr_LP == True:
-			LP_vec = xrdanal.lor_f( self.raw_data.theta*np.pi/360. ) * xrdanal.pol_f( self.raw_data.theta*np.pi/360. )
+			LP_vec = xrdanal.lor_f( (self.raw_data.theta*np.pi/360., 0) )[0] * xrdanal.pol_f( (self.raw_data.theta*np.pi/360., 0) )[0]
 
 		self.fit.data_reg = data()
 		self.fit.data_reg.theta = copy.deepcopy( self.raw_data.theta )
@@ -928,10 +886,10 @@ class spectre:
 				f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k )).real
 
 			elif PSF[0:3] == 'v2k':
-				[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+				[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0] )
 
 			elif PSF[0:3] == 'v3k':
-				[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+				[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0] )
 
 			if plotPSF == 1 and plot == 1:
 				if self.fit.corr_LP == False:
@@ -999,6 +957,7 @@ class spectre:
 		self.fit.R = 100*( s_res_2/s_iobs_2 )**0.5	#[Howard1989]
 		self.fit.R_p = 100*s_abs_res/s_iobs		#[Parrish2004]
 		self.fit.R_wp = 100*( s_w_res_2/s_w_iobs_2 )**0.5#[Parrish2004]
+		self.fit.s_w_iobs_2 = s_w_iobs_2
 		self.est_noise()
 
 		self.etat.calcul = True
@@ -1079,7 +1038,7 @@ class spectre:
 			for pt in self.back_pts_list:
 				th0 = pt[0]
 				th_b_rad = th0*np.pi/360.
-				LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+				LP = xrdanal.pol_f((th_b_rad), 0)[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 				pt[1] = pt[1]/LP
 
 		self.clean_back_pts()
@@ -1179,7 +1138,7 @@ class spectre:
 		for index in sorted( liste_trash, reverse=True ):
 			del self.back_pts_list[index]
 
-	def iter( self, nit = 10, logres = 0, alpha = 1, alpha_back = 1, gamma = 0, plot = 0, track = 1, modback = False, ret_J = False, emetteur = 'Cu', raie = 'a', mat = mater.mat4340 ):
+	def iter( self, nit = 10, logres = 0, alpha = 1, alpha_back = 1, gamma = 0, plot = 0, track = 1, modback = False, ret_J = False ):
 		"""
 		Raffine la solution calculée à l'aide de la méthode des moindres carrés non-linéaires
 		L'algorithme de Gauss-Newton est utilisé de façon itérative pour calculer la solution approchée
@@ -1204,24 +1163,16 @@ class spectre:
 					du calcul.
 			modback :	Mettre à <True> pour raffiner l'intensité du bruit de fond en même temps que la corrélation
 			ret_J :		Retourne le Jacobien (mode débogage)
-			emetteur, raie :Données sur les rayons X incidents, requis dans si une ou plus des PSF est 'v2k'
-			mat :		Matériau, requis si une ou plus des PSF est 'v2k'.
 
 		L'algorithme met à jour la modélisation dans la structure self.peak_list.reg et fait appel à la routine fit_calcul pour
 		trouver la solution à chaque point ainsi que le résidu utilisé dans l'itération suivante.
 		"""
-
-		[mu_m, A, rho, lam, f1, f2] = xrdanal.read_melange( mat, emetteur, raie )
-		if emetteur == 'Cu' and raie == 'a':
-			lam_1 = 1.540562
-			lam_2 = 1.544390
 
 		if self.etat.reg == False:
 			print( u'Aucune régression')
 			return
 		
 		self.fit_calcul()
-
 		
 		#Construit le dictionnaire reliant la colonne du Jacobien avec le bon paramètre
 		list_args = {}
@@ -1258,7 +1209,7 @@ class spectre:
 		erreur = 0
 		
 		if track == 1:
-			print('It.\tR\t\tR_wp\t  logres     n        m      nxm')
+			print('It.\tR\t\tR_wp\t  logres     n        m      nxm      GOF')
 			print('     0% 10.6f' % self.fit.R + '% 16.6f' % self.fit.R_wp ) 
 		
 		#Boucle principale de calcul
@@ -1303,10 +1254,10 @@ class spectre:
 						f = lambda x: ( beta_l*I0lg**2*wofz( np.pi**0.5*(x-t0)/beta_g + 1j*k_voigt)).real
 
 					elif PSF[0:3] == 'v2k':
-						[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+						[f, f1, f2] = self.split_Kalpha( self.peak_list[i][0] )
 
 					elif PSF[0:3] == 'v3k':
-						[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0], mat = mat, emetteur = emetteur, raie = raie )
+						[f, f1, f2, f3] = self.split_Kalpha( self.peak_list[i][0] )
 
 					if PSF[0:3] == 'v2k':
 						fct_reg += f1( self.fit.data_reg.theta )
@@ -1351,7 +1302,7 @@ class spectre:
 								c = self.peak_list[pic_index][1][3]
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
-									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad,0))[0]
 									I = I*LP
 
 							if PSF == 'g':
@@ -1385,7 +1336,7 @@ class spectre:
 								I = beta_l*I0g*I0l*wofz(z).real
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
-									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 									I = I*LP
 								dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
 								if arg == 1:
@@ -1413,7 +1364,7 @@ class spectre:
 								I = beta_l*I0lg**2*wofz(z).real
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
-									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 									I = I*LP
 								dwdz = -2*z*wofz(z) + 2j/np.pi**0.5
 								if arg == 1:
@@ -1441,8 +1392,8 @@ class spectre:
 								
 								d = lam1 / ( 2*np.sin( th0/2. * 2.*np.pi/360. ) )
 								th2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(th0*np.pi/360) )
-								LP1 = xrdanal.pol_f( th0 * np.pi/360 ) * xrdanal.lor_f( th0 * np.pi/360 )
-								LP2 = xrdanal.pol_f( th2 * np.pi/360 ) * xrdanal.lor_f( th2 * np.pi/360 )
+								LP1 = xrdanal.pol_f( (th0 * np.pi/360, 0))[0] * xrdanal.lor_f( (th0 * np.pi/360, 0) )[0]
+								LP2 = xrdanal.pol_f( (th2 * np.pi/360, 0))[0] * xrdanal.lor_f( (th2 * np.pi/360, 0) )[0]
 								if self.fit.corr_LP == False:
 									ratio_alph = ratio_alph * LP2/LP1
 								
@@ -1455,7 +1406,7 @@ class spectre:
 								I = I1 + I2
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
-									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 									I = I*LP
 
 								dwdz1 = -2*z1*wofz(z1) + 2j/np.pi**0.5
@@ -1498,9 +1449,9 @@ class spectre:
 								d = lam1 / ( 2*np.sin( th0/2. * 2.*np.pi/360. ) )
 								th2 = 360/np.pi*np.arcsin( lam2/lam1*np.sin(th0*np.pi/360) )
 								th3 = 360/np.pi*np.arcsin( lam3/lam1*np.sin(th0*np.pi/360) )
-								LP1 = xrdanal.pol_f( th0 * np.pi/360 ) * xrdanal.lor_f( th0 * np.pi/360 )
-								LP2 = xrdanal.pol_f( th2 * np.pi/360 ) * xrdanal.lor_f( th2 * np.pi/360 )
-								LP3 = xrdanal.pol_f( th3 * np.pi/360 ) * xrdanal.lor_f( th3 * np.pi/360 )
+								LP1 = xrdanal.pol_f( (th0 * np.pi/360, 0) )[0] * xrdanal.lor_f((th0 * np.pi/360, 0) )[0]
+								LP2 = xrdanal.pol_f( (th2 * np.pi/360, 0))[0] * xrdanal.lor_f( (th2 * np.pi/360, 0) )[0]
+								LP3 = xrdanal.pol_f( (th3 * np.pi/360, 0))[0] * xrdanal.lor_f( (th3 * np.pi/360, 0) )[0]
 
 								if self.fit.corr_LP == False:
 									ratio_alph = ratio_alph * LP2/LP1
@@ -1519,7 +1470,7 @@ class spectre:
 								I = I1 + I2 + I3
 								if self.fit.corr_LP == True:
 									th_b_rad = th*np.pi/360.
-									LP = xrdanal.pol_f(th_b_rad) * xrdanal.lor_f(th_b_rad)
+									LP = xrdanal.pol_f((th_b_rad, 0))[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 									I = I*LP
 
 								dwdz1 = -2*z1*wofz(z1) + 2j/np.pi**0.5
@@ -1643,13 +1594,14 @@ class spectre:
 				#Calcul de la nouvelle approximation du bruit de fond, de la solution et du résidu
 				self.background_approx()
 				self.fit_calcul()
+				self.fit.GOF = ((self.fit.R_wp/100.)**2 * self.fit.s_w_iobs_2 / (len(self.raw_data.count) - m))**0.5
 				
 				#Mise à jour et affichage des données de l'évolution du calcul itératif
 				k += 1
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )
 				self.fit.delta_vec = np.append( self.fit.delta_vec, crit2 )
 				if track == 1:
-					print('% 6d' %k + '% 10.6f' %self.fit.R + '% 16.6f' %self.fit.R_wp + '%8.2f' %np.log10(crit2)+ '% 8d' %n + '% 8d' %m + '% 8d' %(m*n) )
+					print('% 6d' %k + '% 10.6f' %self.fit.R + '% 16.6f' %self.fit.R_wp + '%8.2f' %np.log10(crit2)+ '% 8d' %n + '% 8d' %m + '% 8d' %(m*n) + '% 10.6f' %self.fit.GOF )
 
 				#Test de convergence du paramètre logres
 				if logres != 0 and crit2 < 10**logres:
@@ -1677,7 +1629,7 @@ class spectre:
 			return J
 
 		#Calcule et retourne la matrice de covariance
-		Vx = np.linalg.inv( np.matmul( Jt, np.matmul( W, J ) ) )
+		Vx = self.fit.GOF**2*np.linalg.inv( np.matmul( Jt, np.matmul( W, J ) ) )
 
 		self.fit.Vx = Vx
 		self.fit.list_args = list_args

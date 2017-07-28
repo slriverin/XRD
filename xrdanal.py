@@ -30,6 +30,7 @@ import pylab
 from scipy.special import wofz, erfc
 from scipy.optimize import fsolve
 from scipy.integrate import simps
+from scipy.optimize import curve_fit
 import os.path
 import csv
 this_dir, this_filename = os.path.split( __file__ )
@@ -1274,6 +1275,7 @@ def corr_var( spectre, cle1, cle2, affich = 1 ):
 		if spectre.peak_list[i][0] == int( cle2[1:-1] ):
 			pic2_index = i
 
+
 	PSF1 = spectre.peak_list[pic1_index][1][0]
 	if PSF1 == 'v2' or PSF1[0:3] == 'v2k' or PSF1[0:3] == 'v3k':
 		arg = int(cle1[-1])
@@ -1359,7 +1361,7 @@ def constr_Vx( spectre, liste_cles ):
 			
 	return x, Vx		
 
-def param_anal( spectre, phase_id, param, dict_phases = {} ):
+def param_anal( spectre, phase_id, param, dict_phases = {}, affich = 1 ):
 	"""
 
 	Analyse et trace les données sélectionnées par l'utilisateur avec les incertitudes correspondantes
@@ -1367,7 +1369,7 @@ def param_anal( spectre, phase_id, param, dict_phases = {} ):
 	Intrants :
 		spectre : Source des données de régression
 		phase_id : Identification de la phase analysée
-		param : Données à analyser. Choix possibles : 'I0lg', 'beta_g', 'beta_l', 'k', 'A', 'I', 'beta', 'FWHM', 'form_fact'
+		param : Données à analyser. Choix possibles : 'I0lg', 'beta_g', 'beta_l', 'k', 'A', 'I', 'beta', 'FWHM', 'form_fact', 'A/R', 'delta_th'
 		dict_phases : Dictionnaire des phases requis pour certaines analyses
 
 	Extrants :
@@ -1585,11 +1587,448 @@ def param_anal( spectre, phase_id, param, dict_phases = {} ):
 				y.append( form_fact )
 				x_err.append( Vx[1][1]**0.5 )
 				y_err.append( var_form_fact**0.5 )
+	elif param == 'A/R':
+		if dict_phases == {}:
+			print('Dictionnaire des phases requis')
+			return
+
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'I r\'{e}gression / th\'{e}orique $=\frac{A}{R}$'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				I0lg = X[0]
+				theta = X[1]
+				beta_g = X[2]
+				beta_l = X[3]
+				A = I0lg**2*beta_g*beta_l
+				J = np.array([2*A/I0lg, 0, A/beta_g, A/beta_l])
+				sig_A = ( np.matmul( np.matmul( J, Vx ), np.transpose(J) ) )**0.5
+
+				phase_data = dict_phases[ phase_id ]
+				for j in range( len( phase_data[5] ) ):
+					if spectre.peak_list[i][5] == phase_data[5][j][0]:
+						R, sig_R = phase_data[5][j][8]
+
+				AR = A/R
+				sig_AR = A/R*(sig_A**2/A**2 + sig_R**2/R**2)**0.5
+				
+				x.append( theta )
+				y.append( AR )
+				x_err.append( Vx[1][1]**0.5 )
+				y_err.append( sig_AR )
+
+	elif param == 'delta_th':
+		if dict_phases == {}:
+			print('Dictionnaire des phases requis')
+			return
+
+		x_label = r'$(2 \theta)_{obs} (^o)$'
+		y_label = r'$(2 \theta)_{obs} - (2 \theta)_{calc} (^o)'
+		for i in range( len( spectre.peak_list ) ):
+			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
+				pic = spectre.peak_list[i][0]
+				cle_I0lg = 'p' + str(pic) + '1'
+				cle_th = 'p' + str(pic) + '2'
+				cle_bg = 'p' + str(pic) + '3'
+				cle_bl = 'p' + str(pic) + '4'
+				X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+				theta_mes = X[1]
+				sig_theta_mes = Vx[1][1]**0.5
+
+				phase_data = dict_phases[ phase_id ]
+				for j in range( len( phase_data[5] ) ):
+					if spectre.peak_list[i][5] == phase_data[5][j][0]:
+						theta_calc = 360./np.pi*phase_data[5][j][3][0] 
+						sig_theta_calc = 360./np.pi*phase_data[5][j][3][1]
+
+
+				delta_theta = theta_mes - theta_calc
+				sig_delta_theta = (sig_theta_mes**2 + sig_theta_calc**2)**0.5
+
+				x.append( theta_mes )
+				y.append( delta_theta )
+				x_err.append( sig_theta_mes )
+				y_err.append( sig_delta_theta )
+
 	plt.errorbar( x, y, xerr=x_err, yerr=y_err, fmt = 'o', ecolor = 'g' )
 	plt.xlabel( x_label )
 	plt.ylabel( y_label )
-	plt.show()
+	if affich == 1:
+		plt.show()
+
 	return x, y, x_err, y_err
+
+def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
+	"""
+
+	Trace graphiquement les aberrations géométriques superposées avec delta_th, qui correspond à la différence
+	entre les positions mesurée et théorique des pics.
+
+	Args :
+		spectre
+		dict_phases
+		phase_id
+		instrum_data
+
+	"""
+
+	from scipy.constants import N_A, physical_constants
+	r_e = physical_constants['classical electron radius'][0]
+
+	[mat, emetteur, raie] = dict_phases['MatBase']
+	[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie )
+
+	mu_l = mu_m * rho
+
+	R_diff = instrum_data.R_diff
+	DS = instrum_data.DS
+	h = instrum_data.mask / 2.
+	delta_sol = instrum_data.sol
+	K1 = instrum_data.K1
+	K2 = instrum_data.K2
+	s = instrum_data.s
+	corr_zero = instrum_data.corr_zero*360/(2*np.pi)
+
+	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
+	q = R_diff*delta_sol/h
+	Q1 = (1 - 1./3*q + 3./8*q**2 - 1./10*q**3)/(1 - 1./6*q)
+	Q2 = (1./4*q**2 - 3./10*q**3)/(1 - 1./6*q)
+	
+	x = spectre.raw_data.theta * 2*np.pi/360
+	f_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
+	f_flat = -K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+	f_ax = -K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+	f_ax_2 = -h**2/(3*R_diff**2)*(Q1/np.tan( x ) + Q2/np.sin( x )) * 360/(2*np.pi)
+	f_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
+	if np.abs(instrum_data.s) > 0:
+		f_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
+	f_tot = f_transp + f_flat + f_ax + f_refr + corr_zero
+	 
+
+	theta_vect = []
+	fact_I3p_vect = []
+
+	for i in range( len( spectre.peak_list ) ):
+		PSF = spectre.peak_list[i][1][0]
+		hkl = spectre.peak_list[i][5]
+		if PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k':
+			I0lg = spectre.peak_list[i][1][1]
+			theta_mes = spectre.peak_list[i][1][2]
+			beta_g = spectre.peak_list[i][1][3]
+			beta_l = spectre.peak_list[i][1][4]
+			k = beta_l / (np.pi**0.5*beta_g)
+			f_I2p = lambda z: -2*beta_l*I0lg**2*np.pi/beta_g**2 * (wofz(z) - 2*z**2*wofz(z) + 2j*z/np.pi**0.5).real
+			f_I3p = lambda z: -2*beta_l*I0lg**2*np.pi**1.5/beta_g**3*(-6*z*wofz(z)+4j/np.pi**0.5+4*z**3*wofz(z)-4j*z**2/np.pi**0.5).real
+			FWHM = 2*beta_g/np.pi**0.5*(1+k**2)**0.5
+
+		x = theta_mes * 2*np.pi/360
+		corr_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
+		corr_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
+		corr_flat = -K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+		corr_ax = -K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+		corr_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
+
+		beta=0
+		gamma=0
+		RS=1
+		x = theta_mes * 2*np.pi/360
+		corr_disp = 2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
+		corr_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
+		corr_flat = -DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+		corr_ax = -(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+		corr_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
+
+		beta=0
+		gamma=0
+		RS=1
+		p = 1e-4
+		lam_1 = 1.540562
+		lam_2 = 1.544390
+		lam_3 = 1.53416
+		F_w = 0.4*np.sin(6*2*np.pi/360)
+		W_transp = (np.sin(x))**2/(4*R_diff**2*mu_l**2)
+		W_mis_sett = beta**2*DS**2/(3*(np.tan(x/2))**2)
+		W_incl = 4*gamma**2*h**2*(np.cos(x/2))**2/(3*R_diff**2)
+		W_focal = F_w**2/(12*R_diff**2)
+		W_RS = RS**2/(12*R_diff**2)
+		W_ax = 7*(delta_sol**4/720 + h**4/(45*R_diff**4))*(1/np.tan(x))**2 + h**2/(9*R_diff**2*(np.sin(x))**2)
+		W_refr = delta_ref**2/(4*mu_l*p)*(-6*np.log(delta_sol/2) + 25 )
+		W_tot = W_transp + W_mis_sett + W_focal + W_RS + W_ax + W_refr 
+
+		if PSF == 'v2':
+			fact_I3p = 0
+		elif PSF[0:3] == 'v2k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 )
+			I3p = f_I3p( z2 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+
+		elif PSF[0:3] == 'v3k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			th3 = 360/np.pi*np.arcsin( lam_3/lam_1*np.sin(th0*np.pi/360) )
+			z3 = np.pi**0.5*(th3-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 ) + f_I2p( z3 )
+			I3p = f_I3p( z2 ) + f_I3p( z3 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+		F_w = 0.4*np.sin(6*2*np.pi/360)
+		W_transp = (np.sin(x))**2/(4*R_diff**2*mu_l**2)
+		W_mis_sett = beta**2*DS**2/(3*(np.tan(x/2))**2)
+		W_incl = 4*gamma**2*h**2*(np.cos(x/2))**2/(3*R_diff**2)
+		W_focal = F_w**2/(12*R_diff**2)
+		W_RS = RS**2/(12*R_diff**2)
+		W_ax = 7*(delta_sol**4/720 + h**4/(45*R_diff**2))*(1/np.tan(x))**2 + h**2/(9*R_diff**2*(np.sin(x))**2)
+		W_refr = delta_ref**2/(4*mu_l*p)*(-6*np.log(delta_sol/2) + 25 )
+		W_tot = W_transp + W_mis_sett + W_focal + W_RS + W_ax + W_refr 
+
+		if PSF == 'v2':
+			fact_I3p = 0
+		elif PSF[0:3] == 'v2k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 )
+			I3p = f_I3p( z2 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+
+		elif PSF[0:3] == 'v3k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			th3 = 360/np.pi*np.arcsin( lam_3/lam_1*np.sin(th0*np.pi/360) )
+			z3 = np.pi**0.5*(th3-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 ) + f_I2p( z3 )
+			I3p = f_I3p( z2 ) + f_I3p( z3 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+
+		theta_vect.append( theta_mes )
+		fact_I3p_vect.append( fact_I3p )
+
+	param_anal( spectre, phase_id, 'delta_th', dict_phases, affich = 0 )
+	#plt.plot( spectre.raw_data.theta, f_transp, 'c', label = 'Correction transparence' )
+	plt.plot( spectre.raw_data.theta, f_flat, 'k--', label = r'Correction \'{e}ch. plat' )
+	plt.plot( spectre.raw_data.theta, f_ax, 'k-.', label = 'Correction pour divergence axiale' )
+	#plt.plot( spectre.raw_data.theta, f_ax_2, 'b:', label = 'Correction pour divergence axiale (2)' )
+	#plt.plot( spectre.raw_data.theta, f_refr, 'r', label = r'Correction pour r\'{e}fraction' )
+	#plt.plot( theta_vect, fact_I3p_vect, 'r^', label = r'$\frac{W I\prime\prime\prime}{2 I\prime\prime}$' )
+	plt.plot( [spectre.raw_data.theta[0], spectre.raw_data.theta[-1]], [corr_zero, corr_zero], 'k:', label = r'Correction z\'{e}ro' )
+	if np.abs(instrum_data.s) > 0:
+		plt.plot( spectre.raw_data.theta, f_disp, 'y', label = r'D\'{e}placement \'{e}chantillon' )
+		f_tot += f_disp
+	plt.plot( spectre.raw_data.theta, f_tot, 'k', label = 'Correction totale' )
+	plt.legend()
+	plt.show()
+
+
+def calc_aberr( spectre, dict_phases, phase_id, instrum_data ):
+	"""
+
+	Calcule et affiche à l'écran les données de correction des pics : position mesurée, position théorique, correcions,
+	position corrigée, variance et écart-type de chaque donnée ou paramètre calculé.
+
+	Args :
+		spectre
+		dict_phases
+		phase_id
+		instrum_data
+
+	"""
+	from scipy.constants import N_A, physical_constants
+	r_e = physical_constants['classical electron radius'][0]
+	lam_1 = 1.540562
+	lam_2 = 1.544390
+	lam_3 = 1.53416
+
+	[mat, emetteur, raie] = dict_phases['MatBase']
+	[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie )
+
+	mu_l = mu_m * rho
+
+	R_diff = instrum_data.R_diff
+	DS = instrum_data.DS
+	h = instrum_data.mask / 2.
+	s = instrum_data.s
+	corr_zero = instrum_data.corr_zero * 360/(2*np.pi)
+	delta_sol = instrum_data.sol
+	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
+	p = 1e-4 #Grosseur des particules, environ 1 micrometre. p en cm
+
+	print( 'Matériau : ' + mat[0][0] )
+	print( 'Phase : ' + phase_id )
+	print( 'Émetteur ' + emetteur + 'K-' + raie )
+	print( 'Longueur d\'onde : %.3f' % lam )
+	print( '-----' )
+#		(1, 1, 1)  123.4564  12345678  12345678  12345678  12345678  12345678  12345678
+	W_vect = []
+	for i in range( len( spectre.peak_list ) ):
+		PSF = spectre.peak_list[i][1][0]
+		hkl = spectre.peak_list[i][5]
+		pic = spectre.peak_list[i][0]
+		cle_I0lg = 'p' + str(pic) + '1'
+		cle_th = 'p' + str(pic) + '2'
+		cle_bg = 'p' + str(pic) + '3'
+		cle_bl = 'p' + str(pic) + '4'
+		X, Vx = constr_Vx( spectre, [cle_I0lg, cle_th, cle_bg, cle_bl] )
+		theta_mes = X[1]
+		sig_theta_mes = Vx[1][1]**0.5
+		I0lg = X[0]
+		theta = X[1]
+		beta_g = X[2]
+		beta_l = X[3]
+		k = beta_l / (np.pi**0.5*beta_g)
+		f_I2p = lambda z: -2*beta_l*I0lg**2*np.pi/beta_g**2 * (wofz(z) - 2*z**2*wofz(z) + 2j*z/np.pi**0.5).real
+		f_I3p = lambda z: -2*beta_l*I0lg**2*np.pi**1.5/beta_g**3*(-6*z*wofz(z)+4j/np.pi**0.5+4*z**3*wofz(z)-4j*z**2/np.pi**0.5).real
+		FWHM = 2*beta_g/np.pi**0.5*(1+k**2)**0.5
+
+		x = theta_mes * 2*np.pi/360
+		corr_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
+		corr_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
+		corr_flat = -instrum_data.K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+		corr_ax = -instrum_data.K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+		corr_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
+
+		beta=0
+		gamma=0
+		RS=1
+		F_w = 0.4*np.sin(6*2*np.pi/360)
+		W_transp = (np.sin(x))**2/(4*R_diff**2*mu_l**2)
+		W_mis_sett = beta**2*DS**2/(3*(np.tan(x/2))**2)
+		W_incl = 4*gamma**2*h**2*(np.cos(x/2))**2/(3*R_diff**2)
+		W_flat = 1./45*DS**4/(np.tan(x/2))**2
+		W_focal = F_w**2/(12*R_diff**2)
+		W_RS = RS**2/(12*R_diff**2)
+		W_ax = 7*(delta_sol**4/720 + h**4/(45*R_diff**4))*(1/np.tan(x))**2 + h**2/(9*R_diff**2*(np.sin(x))**2)
+		W_refr = delta_ref**2/(4*mu_l*p)*(-6*np.log(delta_sol/2) + 25 )
+		W_tot = W_transp + W_mis_sett + W_focal + W_RS + W_ax + W_refr 
+
+		if PSF == 'v2':
+			fact_I3p = 0
+		elif PSF[0:3] == 'v2k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 )
+			I3p = f_I3p( z2 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+
+		elif PSF[0:3] == 'v3k':
+			th0 = theta_mes
+			th2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(th0*np.pi/360) )
+			z2 = np.pi**0.5*(th2-th0)/beta_g + 1j*k
+			th3 = 360/np.pi*np.arcsin( lam_3/lam_1*np.sin(th0*np.pi/360) )
+			z3 = np.pi**0.5*(th3-th0)/beta_g + 1j*k
+			I2p = f_I2p( z2 ) + f_I2p( z3 )
+			I3p = f_I3p( z2 ) + f_I3p( z3 )
+			fact_I3p = W_tot*I3p/(2*I2p)
+	
+		W_vect.append([ W_transp, W_mis_sett, W_focal, W_RS, W_ax, W_refr, fact_I3p, FWHM ])	
+		corr_tot = corr_zero + corr_disp + corr_transp + corr_flat + corr_ax + corr_refr + fact_I3p
+		theta_corr = theta_mes - corr_tot
+
+		phase_data = dict_phases[ phase_id ]
+		for j in range( len( phase_data[5] ) ):
+			if hkl == phase_data[5][j][0]:
+				theta_calc = 360./np.pi*phase_data[5][j][3][0] 
+				sig_theta_calc = 360./np.pi*phase_data[5][j][3][1]
+
+		var_pic_corr = W_tot + sig_theta_mes**2
+		sig_theta_corr = var_pic_corr**0.5
+
+		delta_theta = theta_mes - theta_calc
+		sig_delta_theta = (sig_theta_mes**2 + sig_theta_calc**2)**0.5
+
+		delta_theta_corr = theta_corr - theta_calc
+		sig_delta_theta_corr = (sig_theta_corr**2 + sig_theta_calc**2)**0.5
+
+		print( 'Pic : ' + str(hkl) )
+		print( '			(2_th) (deg)  Var (rad^2)  sig (rad)  sig(deg)  FWHM (deg)')	
+		#				123.2345      1.2345e-02   1.2345     1.2345    1.2345
+
+		print( 'Pos. centroide (mes)    %8.4f      %9.4e   %.4f     %.4f    %.4f' %(theta_mes, (sig_theta_mes*2*np.pi/360)**2, sig_theta_mes*2*np.pi/360, sig_theta_mes, 2*sig_theta_mes) )
+		print( 'Pos. pic (mes)		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(theta_mes, (FWHM*np.pi/360)**2, FWHM*np.pi/360, FWHM/2, FWHM ) )
+		print( 'Pos. pic (calc)		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(theta_calc, (sig_theta_calc*2*np.pi/360)**2, sig_theta_calc*2*np.pi/360, sig_theta_calc, 2*sig_theta_calc) )
+		print( 'MES - CALC		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(delta_theta, (sig_delta_theta*2*np.pi/360)**2, sig_delta_theta*2*np.pi/360, sig_delta_theta, 2*sig_delta_theta) )
+		print( '\n' )
+		print(u'Correction zéro		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(corr_zero, 0, 0, 0, 0) )
+		print(u'Correction déplacement	%8.4f      %9.4e   %.4f     %.4f    %.4f' %(corr_disp, 0, 0, 0, 0) )
+		print(u'Correction éch. plat	%8.4f      %9.4e   %.4f     %.4f    %.4f' %(corr_flat, W_flat, W_flat**0.5, W_flat**0.5*360/(2*np.pi), W_flat**0.5*360/np.pi) )
+		print( 'Correction div. axiale	%8.4f      %9.4e   %.4f     %.4f    %.4f' %(corr_ax, W_ax, W_ax**0.5, W_ax**0.5*360/(2*np.pi), W_ax**0.5*360/np.pi) )
+		print( 'TOTAL			%8.4f      %9.4e   %.4f     %.4f    %.4f' %(corr_tot-fact_I3p, W_tot, W_tot**0.5, W_tot**0.5*360/(2*np.pi), W_tot**0.5*360/np.pi) )
+		
+		print( '\nPic corrigé		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(theta_corr, var_pic_corr, var_pic_corr**0.5, var_pic_corr**0.5*360/(2*np.pi), var_pic_corr**0.5*360/np.pi) )
+
+		print( 'Pos. pic (calc)		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(theta_calc, (sig_theta_calc*2*np.pi/360)**2, sig_theta_calc*2*np.pi/360, sig_theta_calc, 2*sig_theta_calc) )
+		print( 'CORR - CALC		%8.4f      %9.4e   %.4f     %.4f    %.4f' %(delta_theta_corr, (sig_delta_theta_corr*2*np.pi/360)**2, sig_delta_theta_corr*2*np.pi/360, sig_delta_theta_corr, 2*sig_delta_theta_corr) )
+		print( '\nI\'\' : %8.4e; I\'\'\' : %8.4e; WI\'\'\'/2I\'\' : %.4f' %(I2p, I3p, fact_I3p) )
+
+		
+def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
+	"""
+	
+	Utilise la méthode des moindres carrés non-linéaire restreints pour trouver la meilleure fonction de correction
+	de la position des pics.
+
+	Paramètres :
+		dth0 : Correction du zéro du diffractomètre : dans [-1e-3, 1e-3] rad
+		s : Déplacement de l'échantillon par rapport au point focal du diffractomètre : dans [-0.5, 0.5] mm
+		K1 : Facteur d'échelle de la correction pour échantillon plat : dans [0, 10]
+		K2 : Facteur d'échelle de la correction pour divergence axiale : dans [0, 10]
+
+	Args :
+		spectre
+		dict_phases
+		phase_id
+		instrum_data
+
+	Extrants :
+		beta : Vecteur contenant les paramètres optimisés : [dth0, s, K1, K2]
+		V_beta : Matrice de variance-covariance des paramètres optimisés
+
+	"""
+	
+	A = param_anal( spectre, phase_id, 'delta_th', dict_phases, affich=0 )
+	xdata = np.asarray(A[0])*np.pi/360 #x = theta (rad)
+	ydata = np.asarray(A[1])*2*np.pi/360 #y = 2_theta(obs) - 2_theta(theo) (rad)
+	sigma = (np.asarray(A[3])*2*np.pi/360)**2 #rad^-2 
+	h = instrum_data.mask/2.
+	R = instrum_data.R_diff
+	DS = instrum_data.DS
+	d_sol = instrum_data.delta_sol
+	n = len( spectre.peak_list )
+
+	f = lambda th, dth0, s, K1, K2: dth0 - 2.*s*np.cos(th)/R - K1*DS**2/(6*np.tan(th)) - K2*(d_sol**2/12 + h**2/(3*R**2))/np.tan(2*th)
+	beta_0 = [0, 0, 1, 1]
+	bounds = ([-1e-3, -0.5, 0, 0], [1e-3, 0.5, 10, 10])
+	#th : 2_theta
+	beta, V_beta = curve_fit( f, xdata, ydata, p0 = beta_0, sigma = sigma, absolute_sigma = True, bounds = bounds )
+
+
+#	J = np.zeros( (n, 4) )
+#	for i in range( n ):
+#		theta = spectre.peak_list[i][1][2]*np.pi/360.
+#		J[i, 0] = 1
+#		J[i, 1] = -2*np.cos(theta)/instrum_data.R_diff
+#		J[i, 2] = -instrum_data.DS**2/(6*np.tan(theta))
+#		J[i, 3] = -(instrum_data.delta_sol**2/12 + h**2/(3*instrum_data.R_diff**2))/np.tan(2*theta)
+#
+#	print J
+#	JTWJ = np.matmul( np.transpose(J), np.matmul( W, J ) )
+#	JTWy = np.matmul( np.transpose(J), np.matmul( W, y ) )
+#	beta = np.matmul( np.linalg.inv(JTWJ), JTWy )
+#	V_beta = np.linalg.inv( JTWJ )
+
+	return beta, V_beta
+
+	
 
 def read_nmbr( nmbr ):
 	"""
