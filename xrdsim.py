@@ -489,6 +489,8 @@ class spectre:
 						th0 = self.peak_list[i][1][2]
 					elif PSF == 'v':
 						th0 = self.peak_list[i][1][3]
+					elif PSF == 'v2':
+						th0 = self.peak_list[i][1][2]
 					elif PSF[0:3] == 'v2k':
 						th0 = self.peak_list[i][1][2]
 						th2 = 360/np.pi*np.arcsin(lam2/lam1*np.sin(th0*np.pi/360))
@@ -509,7 +511,7 @@ class spectre:
 				if tag == 1:
 					plt.annotate( r'\large{' + str(self.peak_list[i][0]) + '}' , (th0, f_count(th0)*0.5 ) )
 				elif tag == 2 :	
-					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{(' + self.peak_list[i][5] + ')}$}', (th0, f_count(th0)))
+					plt.annotate( r'\large{$' + self.peak_list[i][4] + '_{' + str(self.peak_list[i][5]) + '}$}', (th0, f_count(th0)))
 
 				
 			#plt.plot( self.peak_list.theta, self.peak_list.count, 'ro' ) r7

@@ -110,19 +110,20 @@ def calc_surf( spectre ):
 	print( 'Fond moyen\t' + str(round(np.mean(spectre.data_back.count) ) ) )
 
 
-def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', (a, sig_a) = (0,0), (c, sig_c) = (0,0), pourc_C = 0, (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5), anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
+def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a_sig_a = (0.,0.), c_sig_c = (0.,0.), FV_sig_FV = (1., 0.), pourc_C = 0., strain_sig_strain = (0., 0.), alpha_sig_alpha = (13.3*2*np.pi/360, 4e-5), anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
 	"""
 	Rajoute ou modifie une phase dans la liste des phases disponibles pour l'analyse.
 	Modifie la variable phase_list.
 
 	Args :
 		phase_list : Liste des phases disponibles pour l'analyse
-		mat : Composition chimique du matériau  
+	mat : Composition chimique du matériau  
 		phase_id : Identifiant de la phase, qui sera comparé aux "tags" de le la simulation
 		desc : Texte descriptif de la phase
 		cryst_struct : Structure cristallographique de la phase ('BCC', 'FCC' ou 'HCP')
 		emetteur, raie : Source de rayons X. Valeur par défaut : 'Cu' et 'a' pour Cu K-alpha
 		a, c : Paramètres de maille (Angstrom)
+		FV : Fraction volumique
 		pourc_C : Pourcentage de carbone de la microstructure.
 		alpha : angle de diffraction du monochromateur. Valeur par défaut 2*alpha = 26.6°, soit l'angle de diffraction
 			pour le rayonnement Cu K-alpha d'un monochromateur courbé en graphite pyrolitique, ayant un paramètre d
@@ -158,7 +159,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 
 		phase_list = dict
 			{'MatBase', [mat, emetteur, raie]}
-			{phase_id, [descr, cryst_struct, a, c, V, liste_pics]}
+			{phase_id, [descr, cryst_struct, a, c, V, liste_pics, mat, FV, strain]}
 
 		liste_pics = list
 			[liste_pics[0], liste_pics[1] ... ]
@@ -166,11 +167,16 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		liste_pics[i] = [(h, k, l), p, d, theta, FF, Lf, pf, Tf, R]
 
 	"""
+	a, sig_a = a_sig_a
+	c, sig_c = c_sig_c
+	alpha, sig_alpha = alpha_sig_alpha
+	FV, sig_FV = FV_sig_FV
+	strain, sig_strain = strain_sig_strain
 	
 	#Vérifie si cette phase existe déjà.
 	if 'MatBase' in phase_list:
-		if phase_list['MatBase'][0][0][0] != mat[0][0] or phase_list['MatBase'][1] != emetteur or phase_list['MatBase'][2] != raie:
-			print(u'Veuillez vous assurer que le matériau et la longueur d\'onde du rayon X incident sont les mêmes pour toutes les phases')
+		if phase_list['MatBase'][1] != emetteur or phase_list['MatBase'][2] != raie:
+			print(u'Veuillez vous assurer que la longueur d\'onde du rayon X incident sont les mêmes pour toutes les phases')
 			return
 
 	else:	
@@ -180,6 +186,35 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		ow = raw_input( u'Phase déjà existante... écraser les données? 1 = oui, autre = non ... : '.encode('cp850') )
 		if ow != '1':
 			return
+
+	FV_tot = 0
+	var_FV_tot = 0
+	for phase in phase_list:
+		if phase == 'MatBase':
+			continue
+		FV_tot += phase_list[phase][7][0]
+		var_FV_tot += phase_list[phase][7][1]
+	
+	if FV_tot + FV > 1:
+		print( 'Total des fractions. vol > 1.' )
+		print( '1. Normaliser' )
+		print( u'2. Donner à cette phase la fraction disponible restante, soit : %.3f' %(1 - FV_tot) )
+		print( '3 ou autre. Annuler' )
+		print( u'L\'incertitude sera calculée à partir des incertitudes des autres fractions volumiques' )
+		choix = raw_input( 'Choix? ... : ' )
+		if choix == '1':
+			for phase in phase_list:
+				if phase == 'MatBase':
+					continue
+				phase_list[phase][7] = ( phase_list[phase][7][0]/(FV + FV_tot), phase_list[phase][7][1]/(FV + FV_tot) )
+			FV = FV / (FV + FV_tot)
+			sig_FV = var_FV_tot**0.5/(FV + FV_tot)
+		elif choix == '2':
+			FV = 1 - FV_tot
+			sig_FV = var_FV_tot**0.5
+		else:
+			return
+
 
 
 	[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie, affich )
@@ -197,9 +232,12 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 	if cryst_struct == 'BCC':	#Cubique centré
 		if a == 0 :
 			a = 2.872 #Par défaut, on attribue la valeur usuelle du paramètre de maille du fer alpha
+			sig_a = 0.001 #Valeur approximative à préciser
 		
 		c = 0;
 		V = a**3
+		fV = 1./V**2
+		sig_fV = 6./a**7 * sig_a
 		
 		if liste_pics == []:
 			liste_pics = [ [(1, 1, 0)], [(2, 0, 0)], [(2, 1, 1)], [(2, 2, 0)] ]
@@ -207,56 +245,77 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_p = [12, 6, 24, 12]
 
 		for i in range(len(liste_pics)):
+			(h, k, l) = liste_pics[i][0]
 			d = calc_d( liste_pics[i][0], a )
+			sig_d = sig_a / (h**2 + k**2 + l**2)**0.5
 			theta = np.arcsin( lam / (2*d) )
+			var_theta = (sig_lam**2 + lam**2/d**2*sig_d**2)/(4*d**2*(1-lam**2/(4*d**2)))
+			sig_theta = var_theta**0.5
 			s = np.sin(theta) / lam
-			sF = scatt_f( s ) + f1 + 1j*f2
+			sig_s = sig_d/(2*d**2)
+			sf0, sig_sf0 = scatt_f( s, mat )
+			sF = sf0 + f1 + 1j*f2
 			FF = (4*sF*np.conj(sF)).real
+			sig_FF = (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
 			
 			p = liste_p[i]
-			Lf = lor_f( theta )
-			pf = pol_f( theta, alpha )
-			Tf = temp_f( s )
+			Lf, sig_Lf = lor_f( (theta, sig_theta) )
+			pf, sig_pf = pol_f( (theta, sig_theta), (alpha, sig_alpha) )
+			Tf, sig_Tf = temp_f( (s, sig_s) )
 			R = 1./V**2 * FF*p*Lf*pf*Tf
+			sig_R = R*(sig_fV**2/fV**2 + sig_FF**2/FF**2 + sig_Lf**2/Lf**2 + sig_pf**2/pf**2 + sig_Tf**2/Tf**2)**0.5
 			liste_pics[i].append(p)
-			liste_pics[i].append(d)
-			liste_pics[i].append(theta)
-			liste_pics[i].append(FF)
-			liste_pics[i].append(Lf)
-			liste_pics[i].append(pf)
-			liste_pics[i].append(Tf)
-			liste_pics[i].append(R)
+			liste_pics[i].append((d, sig_d))
+			liste_pics[i].append((theta, sig_theta))
+			liste_pics[i].append((FF, sig_FF))
+			liste_pics[i].append((Lf, sig_Lf))
+			liste_pics[i].append((pf, sig_pf))
+			liste_pics[i].append((Tf, sig_Tf))
+			liste_pics[i].append((R, sig_R))
 		
 	elif cryst_struct == 'FCC': 	#Cubique face centrée
 		if a == 0:
 			a = 3.555 + 0.044*pourc_C
+			sig_a = 0.001
 		c = 0;
 		V = a**3
+		fV = 1./V**2
+		sig_fV = 6./a**7 * sig_a
 
 		if liste_pics == []:
-			liste_pics =  [ [(1, 1, 1)], [(2, 0, 0)], [(2, 2, 0)], [(3, 1, 1)], [(2, 2, 2)], [(3, 3, 1)], [(4, 2, 2)] ]
+			liste_pics =  [ [(1, 1, 1)], [(2, 0, 0)], [(2, 2, 0)], [(3, 1, 1)], [(2, 2, 2)], [(3, 3, 1)], [(4, 0, 0)] ]
 		if liste_p == []:
 			liste_p = [8, 6, 12, 24, 8, 24, 24]
 
 		for i in range(len(liste_pics)):
+			(h, k, l) = liste_pics[i][0]
 			d = calc_d( liste_pics[i][0], a )
+			sig_d = sig_a / (h**2 + k**2 + l**2)**0.5
 			theta = np.arcsin( lam / (2*d) )
+			print lam, d, theta
+			var_theta = (sig_lam**2 + lam**2/d**2*sig_d**2)/(4*d**2*(1-lam**2/(4*d**2)))
+			sig_theta = var_theta**0.5
 			s = np.sin(theta) / lam
-			sF = scatt_f( s, mat ) + f1 + 1j*f2
+			sig_s = sig_d/(2*d**2)
+			sf0, sig_sf0 = scatt_f( s, mat )
+			sF = sf0 + f1 + 1j*f2
 			FF = (16*sF*np.conj(sF)).real
+			sig_FF = (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
+
 			p = liste_p[i]
-			Lf = lor_f( theta )
-			pf = pol_f( theta, alpha )
-			Tf = temp_f( s )
+			Lf, sig_Lf = lor_f( (theta, sig_theta) )
+			pf, sig_pf = pol_f( (theta, sig_theta), (alpha, sig_alpha) )
+			Tf, sig_Tf = temp_f( (s, sig_s) )
 			R = 1./V**2 * FF*p*Lf*pf*Tf
+			sig_R = R*(sig_fV**2/fV**2 + sig_FF**2/FF**2 + sig_Lf**2/Lf**2 + sig_pf**2/pf**2 + sig_Tf**2/Tf**2)**0.5
 			liste_pics[i].append(p)
-			liste_pics[i].append(d)
-			liste_pics[i].append(theta)
-			liste_pics[i].append(FF)
-			liste_pics[i].append(Lf)
-			liste_pics[i].append(pf)
-			liste_pics[i].append(Tf)
-			liste_pics[i].append(R)
+			liste_pics[i].append((d, sig_d))
+			liste_pics[i].append((theta, sig_theta))
+			liste_pics[i].append((FF, sig_FF))
+			liste_pics[i].append((Lf, sig_Lf))
+			liste_pics[i].append((pf, sig_pf))
+			liste_pics[i].append((Tf, sig_Tf))
+			liste_pics[i].append((R, sig_R))
 
 	elif cryst_struct == 'DC':	#Diamond Cubic
 		if a == 0:
@@ -348,8 +407,51 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append(R)
 
 
+	#Calcul de la composition chimique globale de l'échantillon
+	phase_list[phase_id] = [descr, cryst_struct, (a, sig_a), (c, sig_c), V, liste_pics, mat, (FV, sig_FV), (strain, sig_strain)]
+	MatBase = [['MatBase', 'm']]
+	w_tot = 0
+	for phase in phase_list:
+		if phase == 'MatBase':
+			continue
+		phase_list[phase][6] = mat_conv(phase_list[phase][6])
 
-	phase_list[phase_id] = [descr, cryst_struct, a, c, V, liste_pics]
+		for i in range(len(phase_list[phase][6])):
+			if i == 0:
+				continue
+			elem = phase_list[phase][6][i][0]
+			ajoute_elem = True
+			for j in range(len(MatBase)):
+				if j == 0:
+					continue
+				if elem == MatBase[j][0]:
+					w_ph, sig_w_ph = read_nmbr( phase_list[phase][6][i][1] )
+					w_mb, sig_w_mb = read_nmbr( MatBase[j][1] )
+					FV, sig_FV = phase_list[phase][7]
+					MatBase[j][1] = write_nmbr( (w_ph*FV + w_mb, (FV*sig_w_ph**2 + w_ph*sig_FV**2 + sig_w_mb**2)**0.5 ) )
+					ajoute_elem = False
+					w_tot += w_ph*FV
+
+			if ajoute_elem == True:
+				w_ph, sig_w_ph = read_nmbr( phase_list[phase][6][i][1] )
+				FV, sig_FV = phase_list[phase][7]
+				w_text = write_nmbr( (w_ph*FV, (FV*sig_w_ph**2 + w_ph*sig_FV**2)**0.5 ) )
+				MatBase.append( [elem, w_text ] )
+				w_tot += w_ph*FV
+				
+
+	for i in range(len(MatBase)):
+		if i == 0:
+			continue
+		w_ph, sig_w_ph = read_nmbr( MatBase[i][1] )
+		w_ph = w_ph/w_tot
+		sig_w_ph = sig_w_ph/w_tot
+		MatBase[i][1] = write_nmbr( w_ph, sig_w_ph )
+		
+	phase_list['MatBase'][0] = MatBase 
+
+					
+
 	return phase_list
 
 def plot_phase( phase, dict_phases, raw_data = [], couleur = 'blue', theta_min = 20, theta_max = 120 ):
@@ -776,7 +878,7 @@ def mat_conv( mat, affich = 0 ):
 		if affich == 1:
 			print( u'Déjà dans le bon format' )
 		
-		return
+		return mat
 
 	tot = 0.
 	var_B = 0.
@@ -1554,7 +1656,7 @@ def param_anal( spectre, phase_id, param, dict_phases = {}, affich = 1 ):
 
 	elif param == 'form_fact':
 		x_label = r'$(2 \theta)_{obs} (^o)$'
-		y_label = r'Form factor $=\frac{FWHM}{\beta} (^o)$ reg.'
+		y_label = r'Form factor $=\frac{FWHM}{\beta}$ reg.'
 		for i in range( len( spectre.peak_list ) ):
 			if spectre.peak_list[i][3] == True and spectre.peak_list[i][4] == phase_id:
 				pic = spectre.peak_list[i][0]
@@ -1667,9 +1769,9 @@ def param_anal( spectre, phase_id, param, dict_phases = {}, affich = 1 ):
 def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
 	"""
 
-	Trace graphiquement les aberrations géométriques superposées avec delta_th, qui correspond à la différence
-	entre les positions mesurée et théorique des pics.
-
+	Trace graphiquement les corrections angulaires dues aux aberrations géométriques superposées avec 
+	delta_th, qui correspond à la différence entre les positions mesurée et théorique des pics.
+	
 	Args :
 		spectre
 		dict_phases
@@ -1689,11 +1791,9 @@ def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
 	R_diff = instrum_data.R_diff
 	DS = instrum_data.DS
 	h = instrum_data.mask / 2.
-	delta_sol = instrum_data.sol
-	K1 = instrum_data.K1
-	K2 = instrum_data.K2
-	s = instrum_data.s
-	corr_zero = instrum_data.corr_zero*360/(2*np.pi)
+	delta_sol = instrum_data.delta_sol
+	[corr_zero, s, K1, K2] = instrum_data.corr_th
+	corr_zero = corr_zero*360/2/np.pi
 
 	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
 	q = R_diff*delta_sol/h
@@ -1706,7 +1806,7 @@ def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
 	f_ax = -K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
 	f_ax_2 = -h**2/(3*R_diff**2)*(Q1/np.tan( x ) + Q2/np.sin( x )) * 360/(2*np.pi)
 	f_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
-	if np.abs(instrum_data.s) > 0:
+	if np.abs(s) > 0:
 		f_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
 	f_tot = f_transp + f_flat + f_ax + f_refr + corr_zero
 	 
@@ -1821,7 +1921,7 @@ def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
 	#plt.plot( spectre.raw_data.theta, f_refr, 'r', label = r'Correction pour r\'{e}fraction' )
 	#plt.plot( theta_vect, fact_I3p_vect, 'r^', label = r'$\frac{W I\prime\prime\prime}{2 I\prime\prime}$' )
 	plt.plot( [spectre.raw_data.theta[0], spectre.raw_data.theta[-1]], [corr_zero, corr_zero], 'k:', label = r'Correction z\'{e}ro' )
-	if np.abs(instrum_data.s) > 0:
+	if np.abs(s) > 0:
 		plt.plot( spectre.raw_data.theta, f_disp, 'y', label = r'D\'{e}placement \'{e}chantillon' )
 		f_tot += f_disp
 	plt.plot( spectre.raw_data.theta, f_tot, 'k', label = 'Correction totale' )
@@ -1856,9 +1956,9 @@ def calc_aberr( spectre, dict_phases, phase_id, instrum_data ):
 	R_diff = instrum_data.R_diff
 	DS = instrum_data.DS
 	h = instrum_data.mask / 2.
-	s = instrum_data.s
-	corr_zero = instrum_data.corr_zero * 360/(2*np.pi)
-	delta_sol = instrum_data.sol
+	s = instrum_data.corr_th.s
+	corr_zero = instrum_data.corr_th.corr_zero * 360/(2*np.pi)
+	delta_sol = instrum_data.delta_sol
 	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
 	p = 1e-4 #Grosseur des particules, environ 1 micrometre. p en cm
 
@@ -1892,8 +1992,8 @@ def calc_aberr( spectre, dict_phases, phase_id, instrum_data ):
 		x = theta_mes * 2*np.pi/360
 		corr_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
 		corr_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
-		corr_flat = -instrum_data.K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
-		corr_ax = -instrum_data.K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+		corr_flat = -instrum_data.corr_th.K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+		corr_ax = -instrum_data.corr_th.K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
 		corr_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
 
 		beta=0
@@ -1998,7 +2098,7 @@ def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
 	A = param_anal( spectre, phase_id, 'delta_th', dict_phases, affich=0 )
 	xdata = np.asarray(A[0])*np.pi/360 #x = theta (rad)
 	ydata = np.asarray(A[1])*2*np.pi/360 #y = 2_theta(obs) - 2_theta(theo) (rad)
-	sigma = (np.asarray(A[3])*2*np.pi/360)**2 #rad^-2 
+	sigma = (np.asarray(A[3])*2*np.pi/360) #rad 
 	h = instrum_data.mask/2.
 	R = instrum_data.R_diff
 	DS = instrum_data.DS
@@ -2011,6 +2111,21 @@ def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
 	#th : 2_theta
 	beta, V_beta = curve_fit( f, xdata, ydata, p0 = beta_0, sigma = sigma, absolute_sigma = True, bounds = bounds )
 
+	dth0 = beta[0]
+	s = beta[1]
+	K1 = beta[2]
+	K2 = beta[3]
+	f = lambda th: dth0 - 2.*s*np.cos(th)/R - K1*DS**2/(6*np.tan(th)) - K2*(d_sol**2/12 + h**2/(3*R**2))/np.tan(2*th)
+
+	n = len(xdata)
+	m = 4
+	chi2 = 0
+	for i in range( n ):
+		yi = ydata[i]
+		fi = f(xdata[i])
+		si = sigma[i]
+		chi2 += (yi - fi)**2/si**2
+	GOF = (chi2 / (n-m))**0.5	
 
 #	J = np.zeros( (n, 4) )
 #	for i in range( n ):
@@ -2026,9 +2141,93 @@ def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
 #	beta = np.matmul( np.linalg.inv(JTWJ), JTWy )
 #	V_beta = np.linalg.inv( JTWJ )
 
-	return beta, V_beta
+	instrum_data.corr_th = [dth0, s, K1, K2]
+	return instrum_data, beta, V_beta, GOF
 
+
+def opt_FWHM( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
+
+	A = param_anal( spectre, phase_id, 'FWHM', dict_phases, affich=0 )
+	xdata = np.asarray(A[0])*np.pi/360 #x = theta (rad)
+	ydata = np.asarray(A[1])*2*np.pi/360 #y = FWHM (rad)
+	sigma = np.asarray(A[3])*2*np.pi/360 #rad 
+
+	f = lambda th, U, V, W: (U*(np.tan(th))**2 + V*np.tan(th) + W)**0.5 
+	beta, V_beta = curve_fit( f, xdata, ydata, sigma = sigma, bounds = ([0, 0, 0], [10, 10, 10]), absolute_sigma = True )
+
+	U = beta[0]
+	V = beta[1]
+	W = beta[2]
+	f = lambda th: (U*(np.tan(th))**2 + V*np.tan(th) + W)**0.5 * 360/(2*np.pi) #FWHM(o)
+
+	n = len(xdata)
+	m = 3
+	chi2 = 0
+	for i in range( n ):
+		yi = ydata[i]
+		fi = f(xdata[i])*2*np.pi/360
+		si = sigma[i]
+		chi2 += (yi - fi)**2/si**2
+	GOF = (chi2 / (n-m))**0.5	
+
+
+	if affich == 1 :
+		print( 'U : %s rad^2' %( write_nmbr( U, V_beta[0, 0]**0.5 ) ) )
+		print( 'V : %s rad^2' %( write_nmbr( V, V_beta[1, 1]**0.5 ) ) )
+		print( 'W : %s rad^2' %( write_nmbr( W, V_beta[2, 2]**0.5 ) ) )
+		print( 'GOF : %.4f' %(GOF) )
+		plt.figure()
+		plt.errorbar( xdata*360/np.pi, ydata*360/(2*np.pi), yerr = sigma*360/(2*np.pi), fmt = 'o', ecolor = 'g' )
+		plt.plot( spectre.raw_data.theta, f( spectre.raw_data.theta*np.pi/360 ), 'k-' )
+		plt.xlabel( r'$(2 \theta)_{obs} (^o)$' )
+		plt.ylabel( r'$FWHM (^o)$ reg.' )
+		plt.show()
 	
+	instrum_data.calib_FWHM = [U, V, W]
+
+	return instrum_data, beta, V_beta, GOF
+		
+	
+def opt_form_fact( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
+
+	A = param_anal( spectre, phase_id, 'form_fact', dict_phases, affich=0 )
+	xdata = np.asarray(A[0]) #x = 2*theta (o)
+	ydata = np.asarray(A[1]) #y = form_fact
+	sigma = np.asarray(A[3]) #(o) 
+
+	f = lambda th, b, c: 0*th**2 + b*th + c 
+	beta, V_beta = curve_fit( f, xdata, ydata, sigma = sigma, absolute_sigma = True )
+	print beta
+	b = beta[0]
+	c = beta[1]
+	f = lambda th:  b*th + c 
+
+	n = len(xdata)
+	m = 2
+	chi2 = 0
+	for i in range( n ):
+		yi = ydata[i]
+		fi = f(xdata[i])
+		si = sigma[i]
+		chi2 += (yi - fi)**2/si**2
+	GOF = (chi2 / (n-m))**0.5	
+
+
+	if affich == 1 :
+		#print( 'a : %s deg^-2' %( write_nmbr( a, V_beta[0, 0]**0.5 ) ) )
+		print( 'b : %s deg^-1' %( write_nmbr( b, V_beta[0, 0]**0.5 ) ) )
+		print( 'c : %s ' %( write_nmbr( c, V_beta[1, 1]**0.5 ) ) )
+		print( 'GOF : %.4f' %(GOF) )
+		plt.figure()
+		plt.errorbar( xdata, ydata, yerr = sigma, fmt = 'o', ecolor = 'g' )
+		plt.plot( spectre.raw_data.theta, f( spectre.raw_data.theta ), 'k-' )
+		plt.xlabel( r'$(2 \theta)_{obs} (^o)$' )
+		plt.ylabel( r'Form factor $=\frac{FWHM}{\beta}$ reg.' )
+		plt.show()
+	
+	instrum_data.calib_ff = [b, c]
+
+	return instrum_data, beta, V_beta, GOF
 
 def read_nmbr( nmbr ):
 	"""
@@ -2056,6 +2255,7 @@ def read_nmbr( nmbr ):
 	nombre_str = ''
 	is_incert = False
 	is_exposant = False
+	is_zero = False
 	exp_str = ''
 	incert_str = ''
 	negatif = False
@@ -2073,7 +2273,7 @@ def read_nmbr( nmbr ):
 			negatif = True
 			continue
 		
-		elif chiffre == False and virgule == False:
+		elif chiffre == False and virgule == False and is_zero == False:
 			if car == '0':
 				pass
 			elif car == '.':
@@ -2082,16 +2282,29 @@ def read_nmbr( nmbr ):
 			elif isint( car ):
 				nombre_str += car + '.'
 				chiffre = True
+			elif car == 'e' or car == 'E':
+				is_exposant = True
+				is_zero = True
+			elif car == '(':
+				is_incert = True
+				is_zero = True
+
 			else:
 				print('Erreur de format')
 				return
 
-		elif chiffre == False and virgule == True:	
+		elif chiffre == False and virgule == True and is_zero == False:	
 			if car == '0':
 				exposant -= 1
 			elif isint( car ):
 				chiffre = True
 				nombre_str += car + '.'
+			elif car == 'e' or car == 'E':
+				is_exposant = True
+				is_zero = True
+			elif car == '(':
+				is_incert = True
+				is_zero = True
 			else:
 				print('Erreur de format')
 				return
@@ -2135,8 +2348,12 @@ def read_nmbr( nmbr ):
 		pass
 	else:
 		exposant += int( exp_str )
-
+	
+	if nombre_str == '' or chiffre == False:
+		nombre_str = '0.'
+	
 	nombre = float( nombre_str )*10**exposant 
+
 	exp_incert = exposant - len( nombre_str ) + 2
 	
 	if incert_str == '':
@@ -2167,7 +2384,11 @@ def write_nmbr( nombre, incert = 0, ndec = 8 ):
 		nombre = nombre[0]
 	if incert == 0:
 		return '{:.{}e}'.format( nombre, ndec )
-	
+
+	signe = ''
+	if nombre < 0:
+		signe = '-'
+		nombre = -nombre
 	expn = np.floor( np.log10( nombre ) )
 	expi = np.floor( np.log10( incert ) )
 	nsig = int(expn - expi + 1)
@@ -2175,12 +2396,12 @@ def write_nmbr( nombre, incert = 0, ndec = 8 ):
 	incert_str = '{:.{}e}'.format( incert, 1 )
 	incert_parent = incert_str[0] + incert_str[2]
 	if nsig == 0:
-		return nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
+		return signe + nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
 	elif nsig < 0:
 		nzeros = 0 - nsig
 		for i in range(nzeros):
 			incert_parent = incert_parent + '0'
 
-		return nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
+		return signe + nbr_str[0] + '(' + incert_parent + ')' + nbr_str[1:]
 	else:
-		return nbr_str[:(nsig+2)] + '(' + incert_parent + ')' + nbr_str[(nsig+2):]
+		return signe + nbr_str[:(nsig+2)] + '(' + incert_parent + ')' + nbr_str[(nsig+2):]
