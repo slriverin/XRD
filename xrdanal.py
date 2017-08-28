@@ -110,7 +110,7 @@ def calc_surf( spectre ):
 	print( 'Fond moyen\t' + str(round(np.mean(spectre.data_back.count) ) ) )
 
 
-def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a_sig_a = (0.,0.), c_sig_c = (0.,0.), FV_sig_FV = (1., 0.), pourc_C = 0., strain_sig_strain = (0., 0.), alpha_sig_alpha = (13.3*2*np.pi/360, 4e-5), anom_scatt = True, affich = 0, liste_pics = [], liste_p = [] ):
+def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie = 'a', a_sig_a = (0.,0.), c_sig_c = (0.,0.), FV_sig_FV = (1., 0.), pourc_C = 0., strain_sig_strain = (0., 0.), alpha_sig_alpha = (13.3*2*np.pi/360, 4e-5), anom_scatt = True, affich = 0, liste_pics = [], liste_p = [], maj = False ):
 	"""
 	Rajoute ou modifie une phase dans la liste des phases disponibles pour l'analyse.
 	Modifie la variable phase_list.
@@ -167,22 +167,29 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		liste_pics[i] = [(h, k, l), p, d, theta, FF, Lf, pf, Tf, R]
 
 	"""
+
+	if maj == True:
+		phase = phase_list[phase_id]
+		a_sig_a = phase[2]
+		c_sig_c = phase[3]
+		FV_sig_FV = phase[7]
+		strain_sig_strain = phase[8]
+		phase[7] = (FV_sig_FV[0], FV_sig_FV[1])
+
 	a, sig_a = a_sig_a
 	c, sig_c = c_sig_c
 	alpha, sig_alpha = alpha_sig_alpha
 	FV, sig_FV = FV_sig_FV
 	strain, sig_strain = strain_sig_strain
 	
-	#Vérifie si cette phase existe déjà.
 	if 'MatBase' in phase_list:
 		if phase_list['MatBase'][1] != emetteur or phase_list['MatBase'][2] != raie:
 			print(u'Veuillez vous assurer que la longueur d\'onde du rayon X incident sont les mêmes pour toutes les phases')
 			return
-
 	else:	
 		phase_list['MatBase'] = [mat, emetteur, raie]
 	
-	if phase_id in phase_list:
+	if phase_id in phase_list and maj == False:
 		ow = raw_input( u'Phase déjà existante... écraser les données? 1 = oui, autre = non ... : '.encode('cp850') )
 		if ow != '1':
 			return
@@ -195,7 +202,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		FV_tot += phase_list[phase][7][0]
 		var_FV_tot += phase_list[phase][7][1]
 	
-	if FV_tot + FV > 1:
+	if FV_tot + FV > 1 and maj == False:
 		print( 'Total des fractions. vol > 1.' )
 		print( '1. Normaliser' )
 		print( u'2. Donner à cette phase la fraction disponible restante, soit : %.3f' %(1 - FV_tot) )
@@ -214,6 +221,15 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			sig_FV = var_FV_tot**0.5
 		else:
 			return
+
+	elif FV_tot > 1 and maj == True:	
+		for phase in phase_list:
+			if phase == 'MatBase':
+				continue
+			phase_list[phase][7] = ( phase_list[phase][7][0]/FV_tot, phase_list[phase][7][1]/FV_tot) )
+			FV = FV / FV_tot
+			sig_FV = var_FV_tot**0.5/FV_tot
+
 
 
 
@@ -292,7 +308,6 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			d = calc_d( liste_pics[i][0], a )
 			sig_d = sig_a / (h**2 + k**2 + l**2)**0.5
 			theta = np.arcsin( lam / (2*d) )
-			print lam, d, theta
 			var_theta = (sig_lam**2 + lam**2/d**2*sig_d**2)/(4*d**2*(1-lam**2/(4*d**2)))
 			sig_theta = var_theta**0.5
 			s = np.sin(theta) / lam
@@ -410,11 +425,24 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 	#Calcul de la composition chimique globale de l'échantillon
 	phase_list[phase_id] = [descr, cryst_struct, (a, sig_a), (c, sig_c), V, liste_pics, mat, (FV, sig_FV), (strain, sig_strain)]
 	MatBase = [['MatBase', 'm']]
-	w_tot = 0
+	w_tot = 0.
+	m_tot = 0.
 	for phase in phase_list:
 		if phase == 'MatBase':
 			continue
 		phase_list[phase][6] = mat_conv(phase_list[phase][6])
+		FV, sig_FV = phase_list[phase][7]
+		[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie, affich )
+		m_tot += FV*rho
+
+	for phase in phase_list:
+		if phase == 'MatBase':
+			continue
+		phase_list[phase][6] = mat_conv(phase_list[phase][6])
+		FV, sig_FV = phase_list[phase][7]
+		[(mu_m, sig_mu_m), (A, sig_A), (rho, sig_rho), (lam, sig_lam), (f1, sig_f1), (f2, sig_f2)] = read_melange( mat, emetteur, raie, affich )
+		w_phase = FV*rho/m_tot
+		sig_w_phase = (1. - w_phase)/m_tot*(rho**2*sig_FV**2 + FV**2*sig_rho**2)**0.5
 
 		for i in range(len(phase_list[phase][6])):
 			if i == 0:
@@ -425,29 +453,16 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 				if j == 0:
 					continue
 				if elem == MatBase[j][0]:
-					w_ph, sig_w_ph = read_nmbr( phase_list[phase][6][i][1] )
-					w_mb, sig_w_mb = read_nmbr( MatBase[j][1] )
-					FV, sig_FV = phase_list[phase][7]
-					MatBase[j][1] = write_nmbr( (w_ph*FV + w_mb, (FV*sig_w_ph**2 + w_ph*sig_FV**2 + sig_w_mb**2)**0.5 ) )
+					w_el_ph, sig_w_el_ph = read_nmbr( phase_list[phase][6][i][1] )
+					w_el_mb, sig_w_el_mb = read_nmbr( MatBase[j][1] )
+					MatBase[j][1] = write_nmbr( (w_el_ph * w_phase + w_el_mb, (w_phase**2*sig_w_el_ph**2 + w_el_ph**2*sig_w_phase**2 + sig_w_el_mb**2)**0.5 ) )
 					ajoute_elem = False
-					w_tot += w_ph*FV
 
 			if ajoute_elem == True:
-				w_ph, sig_w_ph = read_nmbr( phase_list[phase][6][i][1] )
-				FV, sig_FV = phase_list[phase][7]
-				w_text = write_nmbr( (w_ph*FV, (FV*sig_w_ph**2 + w_ph*sig_FV**2)**0.5 ) )
+				w_el_ph, sig_w_el_ph = read_nmbr( phase_list[phase][6][i][1] )
+				w_text = write_nmbr( (w_el_ph * w_phase, (w_phase**2*sig_w_el_ph**2 + w_el_ph**2*sig_w_phase**2)**0.5 ) )
 				MatBase.append( [elem, w_text ] )
-				w_tot += w_ph*FV
 				
-
-	for i in range(len(MatBase)):
-		if i == 0:
-			continue
-		w_ph, sig_w_ph = read_nmbr( MatBase[i][1] )
-		w_ph = w_ph/w_tot
-		sig_w_ph = sig_w_ph/w_tot
-		MatBase[i][1] = write_nmbr( w_ph, sig_w_ph )
-		
 	phase_list['MatBase'][0] = MatBase 
 
 					
@@ -1792,7 +1807,11 @@ def plot_aberration( spectre, dict_phases, phase_id, instrum_data ):
 	DS = instrum_data.DS
 	h = instrum_data.mask / 2.
 	delta_sol = instrum_data.delta_sol
-	[corr_zero, s, K1, K2] = instrum_data.corr_th
+	[corr_zero_s, s_s, K1_s, K2_s] = instrum_data.corr_th
+	corr_zero = corr_zero_s[0]
+	s = s_s[0]
+	K1 = K1_s[0]
+	K2 = K2_s[0]
 	corr_zero = corr_zero*360/2/np.pi
 
 	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
@@ -1956,8 +1975,11 @@ def calc_aberr( spectre, dict_phases, phase_id, instrum_data ):
 	R_diff = instrum_data.R_diff
 	DS = instrum_data.DS
 	h = instrum_data.mask / 2.
-	s = instrum_data.corr_th.s
-	corr_zero = instrum_data.corr_th.corr_zero * 360/(2*np.pi)
+	[corr_zero_s, s_s, K1_s, K2_s] = instrum_data.corr_th
+	corr_zero = corr_zero_s[0]
+	s = s_s[0]
+	K1 = K1_s[0]
+	K2 = K2_s[0]
 	delta_sol = instrum_data.delta_sol
 	delta_ref = rho * N_A * 100*r_e * (lam*10**-8)**2 * f1 / ( 2 * np.pi * A ) #Indice de réfraction [gisaxs.com/index.php/Refractive_index]
 	p = 1e-4 #Grosseur des particules, environ 1 micrometre. p en cm
@@ -1992,8 +2014,8 @@ def calc_aberr( spectre, dict_phases, phase_id, instrum_data ):
 		x = theta_mes * 2*np.pi/360
 		corr_disp = -2*s/R_diff*np.cos(x/2) * 360/(2*np.pi)
 		corr_transp = -np.sin(x)/(2*mu_l*R_diff) *360/(2*np.pi)
-		corr_flat = -instrum_data.corr_th.K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
-		corr_ax = -instrum_data.corr_th.K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
+		corr_flat = -K1*DS**2/(6. * np.tan( x / 2. ) ) * 360/(2*np.pi)
+		corr_ax = -K2*(delta_sol**2/12 + h**2/(3*R_diff**2))*1./np.tan( x ) * 360/(2*np.pi)
 		corr_refr = -2*delta_ref*np.tan( x/2 ) * 360/(2*np.pi)
 
 		beta=0
@@ -2112,9 +2134,13 @@ def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
 	beta, V_beta = curve_fit( f, xdata, ydata, p0 = beta_0, sigma = sigma, absolute_sigma = True, bounds = bounds )
 
 	dth0 = beta[0]
+	sig_dth0 = V_beta[0, 0]**0.5
 	s = beta[1]
+	sig_s = V_beta[1, 1]**0.5
 	K1 = beta[2]
+	sig_K1 = V_beta[2, 2]**0.5
 	K2 = beta[3]
+	sig_K2 = V_beta[3, 3]**0.5
 	f = lambda th: dth0 - 2.*s*np.cos(th)/R - K1*DS**2/(6*np.tan(th)) - K2*(d_sol**2/12 + h**2/(3*R**2))/np.tan(2*th)
 
 	n = len(xdata)
@@ -2141,7 +2167,7 @@ def opt_aberr( spectre, dict_phases, phase_id, instrum_data ):
 #	beta = np.matmul( np.linalg.inv(JTWJ), JTWy )
 #	V_beta = np.linalg.inv( JTWJ )
 
-	instrum_data.corr_th = [dth0, s, K1, K2]
+	instrum_data.corr_th = [(dth0, sig_dth0), (s, sig_s), (K1, sig_K1), (K2, sig_K2) ]
 	return instrum_data, beta, V_beta, GOF
 
 
@@ -2156,8 +2182,11 @@ def opt_FWHM( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
 	beta, V_beta = curve_fit( f, xdata, ydata, sigma = sigma, bounds = ([0, 0, 0], [10, 10, 10]), absolute_sigma = True )
 
 	U = beta[0]
+	sig_U = V_beta[0, 0]**0.5
 	V = beta[1]
+	sig_V = V_beta[1, 1]**0.5
 	W = beta[2]
+	sig_W = V_beta[2, 2]**0.5
 	f = lambda th: (U*(np.tan(th))**2 + V*np.tan(th) + W)**0.5 * 360/(2*np.pi) #FWHM(o)
 
 	n = len(xdata)
@@ -2183,7 +2212,7 @@ def opt_FWHM( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
 		plt.ylabel( r'$FWHM (^o)$ reg.' )
 		plt.show()
 	
-	instrum_data.calib_FWHM = [U, V, W]
+	instrum_data.calib_FWHM = [ (U, sig_U), (V, sig_V), (W, sig_W) ]
 
 	return instrum_data, beta, V_beta, GOF
 		
@@ -2199,7 +2228,9 @@ def opt_form_fact( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
 	beta, V_beta = curve_fit( f, xdata, ydata, sigma = sigma, absolute_sigma = True )
 	print beta
 	b = beta[0]
+	sig_b = V_beta[0, 0]**0.5
 	c = beta[1]
+	sig_c = V_beta[1, 1]**0.5
 	f = lambda th:  b*th + c 
 
 	n = len(xdata)
@@ -2225,7 +2256,7 @@ def opt_form_fact( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
 		plt.ylabel( r'Form factor $=\frac{FWHM}{\beta}$ reg.' )
 		plt.show()
 	
-	instrum_data.calib_ff = [b, c]
+	instrum_data.calib_ff = [ (b, sig_b), (c, sig_c) ]
 
 	return instrum_data, beta, V_beta, GOF
 
@@ -2319,7 +2350,7 @@ def read_nmbr( nmbr ):
 			elif car == ')':
 				is_incert = False
 
-		elif chiffre == True and virgule == False:
+		elif (chiffre == True and virgule == False) or is_zero == True:
 			if car == '.':
 				virgule = True
 			elif isint( car ):
@@ -2349,8 +2380,9 @@ def read_nmbr( nmbr ):
 	else:
 		exposant += int( exp_str )
 	
-	if nombre_str == '' or chiffre == False:
+	if nombre_str == '' or is_zero == True or float( nombre_str ) == 0.0:
 		nombre_str = '0.'
+		exposant = -2
 	
 	nombre = float( nombre_str )*10**exposant 
 

@@ -85,6 +85,7 @@ class etat_cl:
 		self.reg = False
 		self.calcul = False
 		self.vardata = False
+		self.rietvelt = False
 
 class spectre:
 
@@ -203,7 +204,8 @@ class spectre:
 				for i in range( len( self.back_pts_list ) ):
 					f.write('\tspectre.back_pts_list.append([')
 					f.write( str( self.back_pts_list[i][0] ) + ', ' )
-					f.write( str( self.back_pts_list[i][1] ) + '])\n' )
+					f.write( str( self.back_pts_list[i][1] ) + ', ' )
+					f.write( str( self.back_pts_list[i][2] ) + '])\n' )
 
 			if self.etat.calcul == True:
 				f.write('\tspectre.etat.calcul = True\n')
@@ -1013,7 +1015,8 @@ class spectre:
 		f_count = interp1d( self.data_smooth.theta, self.data_smooth.count )
 
 		#Le point à gauche de l'intervalle mesuré est toujours ajouté
-		self.back_pts_list.append( [self.data_smooth.theta[0], float( f_count(self.data_smooth.theta[0]) ) ] )
+		count = float( f_count( self.data_smooth.theta[0] ) )
+		self.back_pts_list.append( [self.data_smooth.theta[0], count, count**0.5] )
 
 		if meth == 'mid':
 			for i in range( len( self.peak_list ) ):
@@ -1023,17 +1026,21 @@ class spectre:
 
 			for i in range( len( peak_list_sorted ) - 1):
 				theta_mid = (peak_list_sorted[i] + peak_list_sorted[i+1])/2 
-				self.back_pts_list.append( [theta_mid, float( f_count(theta_mid) )] )
+				count = float( f_count(theta_mid) )
+				self.back_pts_list.append( [theta_mid, count, count**0.5] )
 
 		elif meth[0:3] == 'int':
 			interv = float( meth[3:] )
 			dernierpt = self.raw_data.theta[0]
 			for theta in self.raw_data.theta: 
 				 if theta - dernierpt > interv:
-					self.back_pts_list.append( [theta, float( f_count(theta) )] )
+					count = float( f_count(theta) )
+					self.back_pts_list.append( [theta, count, count**0.5] )
 					dernierpt = theta
 
-		self.back_pts_list.append( [self.data_smooth.theta[-1], float( f_count(self.data_smooth.theta[-1]) ) ] )
+		count = float( f_count(self.data_smooth.theta[-1]) )
+		self.back_pts_list.append( [self.data_smooth.theta[-1], count, count**0.5 ] )
+
 		self.etat.back_list = True
 
 		if self.fit.corr_LP == True:
@@ -1042,6 +1049,7 @@ class spectre:
 				th_b_rad = th0*np.pi/360.
 				LP = xrdanal.pol_f((th_b_rad), 0)[0] * xrdanal.lor_f((th_b_rad, 0))[0]
 				pt[1] = pt[1]/LP
+				pt[2] = pt[2]/LP
 
 		self.clean_back_pts()
 
@@ -1632,6 +1640,13 @@ class spectre:
 
 		#Calcule et retourne la matrice de covariance
 		Vx = self.fit.GOF**2*np.linalg.inv( np.matmul( Jt, np.matmul( W, J ) ) )
+
+		#Calcule les écarts-types des ordonnées des points d'arrière-plan
+		for j in range( m ):
+			cle = list_args[j]
+			if cle[0] == 'b':
+				pt_no = int( cle[1:] )
+				self.back_pts_list[pt_no][2] = Vx[j, j]**0.5
 
 		self.fit.Vx = Vx
 		self.fit.list_args = list_args
