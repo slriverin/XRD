@@ -15,7 +15,7 @@ import xrdsim, xrdanal
 def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, alpha3 = False, affich = 0 ):
 	"""
 
-	Simule le spectre d'un échantillon standard (pas de déformation ou d'influence de la taille des cristaux)
+	Simule le spectre d'un échantillon standard
 
 	Simule les pics K-alpha 1 et K-alpha 2 du spectre du cuivre
 
@@ -131,6 +131,11 @@ def rietvelt_init( spectre, dict_phases, instrum_data ):
 			'i:dth:1'	: Facteur K1 (spécimen plat)
 			'i:dth:2'	: Facteur K2 (divergence axiale)
 			'i:ra'		: Ratio d'intensité alpha2/alpha1
+			'i:FWHM:U'	: Paramètres régression FWHM
+			'i:FWHM:V'
+			'i:FWHM:W'
+			'i:ff:b'	: Paramètres régression form factor
+			'i:ff:c'
 
 		actif : Interrupteur Vrai/Faux déterminant si le paramètre est raffiné ou pas
 		lim_min, lim_max : Limites inférieure et supérieure des valeurs acceptables pour le paramètre
@@ -148,6 +153,7 @@ def rietvelt_init( spectre, dict_phases, instrum_data ):
 		return
 	
 	spectre.etat.rietvelt = True
+	spectre.etat.reg = True
 	spectre.dict_phases = dict_phases
 	spectre.instrum_data = instrum_data
 	spectre.dict_args = {}
@@ -186,9 +192,16 @@ def rietvelt_init( spectre, dict_phases, instrum_data ):
 	spectre.dict_args[ 'i:dth:1' ] = [ False, [0., 10.] ]
 	spectre.dict_args[ 'i:dth:2' ] = [ False, [0., 10.] ]
 	spectre.dict_args[ 'i:ra' ] = [ False, [0.4, 0.6] ]
+	spectre.dict_args[ 'i:FWHM:U' ] = [ False, [-np.inf, np.inf] ]
+	spectre.dict_args[ 'i:FWHM:V' ] = [ False, [-np.inf, np.inf] ]
+	spectre.dict_args[ 'i:FWHM:W' ] = [ False, [-np.inf, np.inf] ]
+	spectre.dict_args[ 'i:ff:b' ] = [ False, [-np.inf, np.inf] ]
+	spectre.dict_args[ 'i:ff:c' ] = [ False, [-np.inf, np.inf] ]
+	
 
 	spectre.rietvelt_calc = rietvelt_calc.__get__( spectre, spectre.__class__ )
 	spectre.rietvelt_opt = rietvelt_opt.__get__( spectre, spectre.__class__ )
+	spectre.rietvelt_params = rietvelt_params.__get__( spectre, spectre.__class__ )
 
 	spectre.background_approx()
 	return spectre
@@ -205,9 +218,15 @@ def rietvelt_calc( self, affich = 0 ):
 
 	"""
 
-
 	theta_range = self.raw_data.theta
 	count_range = self.raw_data.count*0
+	self.fit.data_reg = xrdsim.data()
+	self.fit.data_reg.theta = theta_range
+	self.fit.data_reg.count = count_range*0.
+	self.fit.residu = xrdsim.data()
+	self.fit.residu.theta = theta_range
+	self.fit.residu.count = count_range*0.
+	self.background_approx()
 
 	for phase_id in self.dict_phases:
 		if phase_id == 'MatBase':
@@ -226,21 +245,20 @@ def rietvelt_calc( self, affich = 0 ):
 
 	A_simul = simps( count_range, theta_range )
 	count_range = count_range * A_obs/A_simul
-
-	self.fit.data_reg.theta = theta_range
 	self.fit.data_reg.count = count_range
 
-	s_res_2 = 0
-	s_iobs_2 = 0
-	s_w_iobs_2 = 0
-	s_abs_res = 0
-	s_iobs = 0
-	s_w_res_2 = 0
+
+	s_res_2 = 0.
+	s_iobs_2 = 0.
+	s_w_iobs_2 = 0.
+	s_abs_res = 0.
+	s_iobs = 0.
+	s_w_res_2 = 0.
 
 	for i in range( len( self.fit.data_reg.theta ) ):
 		i_obs = self.raw_data.count[i]
 		i_calc = self.fit.data_reg.count[i]
-		w = 1./max(i_obs, 1)
+		w = 1./max(i_obs, 1.)
 		res = i_obs - i_calc
 
 		self.fit.residu.count[i] = res
@@ -257,9 +275,9 @@ def rietvelt_calc( self, affich = 0 ):
 		s_w_res_2 += w*res**2
 		s_w_iobs_2 += w*i_obs**2
 
-	self.fit.R = 100*( s_res_2/s_iobs_2 )**0.5	#[Howard1989]
-	self.fit.R_p = 100*s_abs_res/s_iobs		#[Parrish2004]
-	self.fit.R_wp = 100*( s_w_res_2/s_w_iobs_2 )**0.5#[Parrish2004]
+	self.fit.R = 100.*( s_res_2/s_iobs_2 )**0.5	#[Howard1989]
+	self.fit.R_p = 100.*s_abs_res/s_iobs		#[Parrish2004]
+	self.fit.R_wp = 100.*( s_w_res_2/s_w_iobs_2 )**0.5#[Parrish2004]
 	self.fit.s_w_iobs_2 = s_w_iobs_2
 	self.est_noise()
 
@@ -333,6 +351,18 @@ def rietvelt_opt( self, affich = 1 ):
 					p0.append( self.instrum_data.corr_th[2][0] )
 				elif arg[-1] == '2':
 					p0.append( self.instrum_data.corr_th[3][0] )
+			elif arg[0:6] == 'i:FWHM':
+				if arg[-1] == 'U':
+					p0.append( self.instrum_data.calib_FWHM[0][0] )
+				elif arg[-1] == 'V':
+					p0.append( self.instrum_data.calib_FWHM[1][0] )
+				elif arg[-1] == 'W':
+					p0.append( self.instrum_data.calib_FWHM[2][0] )
+			elif arg[0:4] == 'i:ff':
+				if arg[-1] == 'b':
+					p0.append( self.instrum_data.calib_ff[0][0] )
+				elif arg[-1] == 'c':
+					p0.append( self.instrum_data.calib_ff[1][0] )
 
 	#Génération de la fonction à optimiser					
 	sp_dummy = deepcopy( self )
@@ -367,6 +397,18 @@ def rietvelt_opt( self, affich = 1 ):
 					sp_dummy.instrum_data.corr_th[2] = (args[i], 0)
 				elif arg[-1] == '2':
 					sp_dummy.instrum_data.corr_th[3] = (args[i], 0)
+			elif arg[0:6] == 'i:FWHM':
+				if arg[-1] == 'U':
+					sp_dummy.instrum_data.calib_FWHM[0] = (args[i], 0)
+				elif arg[-1] == 'V':
+					sp_dummy.instrum_data.calib_FWHM[1] = (args[i], 0)
+				elif arg[-1] == 'W':
+					sp_dummy.instrum_data.calib_FWHM[2] = (args[i], 0)
+			elif arg[0:4] == 'i:ff':
+				if arg[-1] == 'b':
+					sp_dummy.instrum_data.calib_ff[0] = (args[i], 0)
+				elif arg[-1] == 'c':
+					sp_dummy.instrum_data.calib_ff[1] = (args[i], 0)
 
 		FV_tot = 0
 		for cle in sp_dummy.dict_args:
@@ -402,7 +444,7 @@ def rietvelt_opt( self, affich = 1 ):
 		if arg[0] == 'b':
 			ptno = int( arg[-1] )
 			self.back_pts_list[ptno][1] = x[i]
-			self.back_pts_list[ptno][1] = Vx[i, i]**0.5
+			self.back_pts_list[ptno][2] = Vx[i, i]**0.5
 		elif arg[0:2] == 'p:':
 			phase_id = arg[2:-2]
 			phase = self.dict_phases[phase_id]
@@ -425,11 +467,23 @@ def rietvelt_opt( self, affich = 1 ):
 				self.instrum_data.corr_th[2] = (x[i], Vx[i, i]**0.5)
 			elif arg[-1] == '2':
 				self.instrum_data.corr_th[3] = (x[i], Vx[i, i]**0.5)
+		elif arg[0:6] == 'i:FWHM':
+			if arg[-1] == 'U':
+				self.instrum_data.calib_FWHM[0] = (x[i], Vx[i, i]**0.5)
+			elif arg[-1] == 'V':
+				self.instrum_data.calib_FWHM[1] = (x[i], Vx[i, i]**0.5)
+			elif arg[-1] == 'W':
+				self.instrum_data.calib_FWHM[2] = (x[i], Vx[i, i]**0.5)
+		elif arg[0:4] == 'i:ff':
+			if arg[-1] == 'b':
+				self.instrum_data.calib_ff[0] = (x[i], Vx[i, i]**0.5)
+			elif arg[-1] == 'c':
+				self.instrum_data.calib_ff[1] = (x[i], Vx[i, i]**0.5)
 	
 	FV_tot = 0
-	for cle in self.dict_args:
-		if self.dict_args[cle][1] == 'B':
-			phasemax = cle[2:-2]
+	for arg in self.dict_args:
+		if self.dict_args[arg][1] == 'B':
+			phasemax = arg[2:-2]
 
 	for phase_id in self.dict_phases:
 		if phase_id == 'MatBase' or phase_id == phasemax:
@@ -446,4 +500,54 @@ def rietvelt_opt( self, affich = 1 ):
 		self.dict_phases = xrdanal.phase( self.dict_phases, phase[6], phase_id, phase[0], phase[1], maj = True )
 
 	self.rietvelt_calc( affich = affich )
+	if affich == 1:
+		self.rietvelt_params()
 
+
+def rietvelt_params( self ):
+	print( 'Argument  Valeur      Sigma      Actif  Min         Max' )
+	for arg in self.dict_args:
+		if arg[0] == 'b':
+			ptno = int( arg[1:] )
+			x, sig_x =  self.back_pts_list[ptno][1], self.back_pts_list[ptno][2]
+		elif arg[0:2] == 'p:':
+			phase_id = arg[2:-2]
+			phase = self.dict_phases[phase_id]
+			if arg[-1] == 'x':
+				x, sig_x = phase[7]
+			elif arg[-1] == 'a':
+				x, sig_x = phase[2]
+			elif arg[-1] == 'c':
+				x, sig_x = phase[3]
+			elif arg[-1] == 's':
+				x, sig_x = phase[8]
+		elif arg == 'i:ra':
+			x = self.instrum_data.ratio_alpha
+			sig_x = 0.
+		elif arg[0:5] == 'i:dth':
+			if arg[-1] == 'c':
+				x, sig_x = self.instrum_data.corr_th[0]
+			elif arg[-1] == 's':
+				x, sig_x = self.instrum_data.corr_th[1]
+			elif arg[-1] == '1':
+				x, sig_x = self.instrum_data.corr_th[2]
+			elif arg[-1] == '2':
+				x, sig_x = self.instrum_data.corr_th[3]
+		elif arg[0:6] == 'i:FWHM':
+			if arg[-1] == 'U':
+				x, sig_x = self.instrum_data.calib_FWHM[0]
+			elif arg[-1] == 'V':
+				x, sig_x = self.instrum_data.calib_FWHM[1]
+			elif arg[-1] == 'W':
+				x, sig_x = self.instrum_data.calib_FWHM[2]
+		elif arg[0:4] == 'i:ff':
+			if arg[-1] == 'b':
+				x, sig_x = self.instrum_data.calib_ff[0]
+			elif arg[-1] == 'c':
+				x, sig_x = self.instrum_data.calib_ff[1]
+
+		if self.dict_args[arg][1] == 'B':
+			print( '%8s %11.4e %11.4e %5r %11.4e %11.4e' %( arg, x, sig_x, self.dict_args[arg][0], 0., 1. ))
+		else:
+			print( '%8s %11.4e %11.4e %5r %11.4e %11.4e' %( arg, x, sig_x, self.dict_args[arg][0], self.dict_args[arg][1][0], self.dict_args[arg][1][1] ) ) 
+		

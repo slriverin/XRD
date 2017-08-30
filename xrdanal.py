@@ -226,7 +226,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		for phase in phase_list:
 			if phase == 'MatBase':
 				continue
-			phase_list[phase][7] = ( phase_list[phase][7][0]/FV_tot, phase_list[phase][7][1]/FV_tot) )
+			phase_list[phase][7] = ( phase_list[phase][7][0]/FV_tot, phase_list[phase][7][1]/FV_tot )
 			FV = FV / FV_tot
 			sig_FV = var_FV_tot**0.5/FV_tot
 
@@ -272,7 +272,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			sf0, sig_sf0 = scatt_f( s, mat )
 			sF = sf0 + f1 + 1j*f2
 			FF = (4*sF*np.conj(sF)).real
-			sig_FF = (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
+			sig_FF = 4*(4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
 			
 			p = liste_p[i]
 			Lf, sig_Lf = lor_f( (theta, sig_theta) )
@@ -315,7 +315,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			sf0, sig_sf0 = scatt_f( s, mat )
 			sF = sf0 + f1 + 1j*f2
 			FF = (16*sF*np.conj(sF)).real
-			sig_FF = (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
+			sig_FF = 16*(4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
 
 			p = liste_p[i]
 			Lf, sig_Lf = lor_f( (theta, sig_theta) )
@@ -421,6 +421,45 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append(Tf)
 			liste_pics[i].append(R)
 
+	elif cryst_struct == 'BCT':	#Quadratique centré
+		V = a**2*c
+
+		if liste_pics == []:
+			liste_pics = [	[(1, 0, 1)], [(1, 1, 0)], [(0, 0, 2)], [(2, 0, 0)], [(1, 1, 2)], 
+				      	[(2, 1, 1)], [(2, 0, 2)], [(2, 2, 0)], [(1, 0, 3)], [(3, 0, 1)],
+					[(3, 1, 0)], [(2, 2, 2)] ]
+		if liste_p == []:	
+			liste_p = [	8, 4, 2, 4, 8,
+					16, 8, 4, 8, 8,
+					8, 8 ]
+
+		for i in range( len(liste_pics) ):
+			(h, k, l) = liste_pics[i][0]
+			d = calc_d( liste_pics[i][0], a, c, 'q' )
+			sig_d = d**3 * ( (h**2 + k**2)**2/a**6 * sig_a**2 + l**4/c**6*sig_c**2)**0.5
+			theta = np.arcsin( lam / (2*d) )
+			var_theta = (sig_lam**2 + lam**2/d**2*sig_d**2)/(4*d**2*(1-lam**2/(4*d**2)))
+			sig_theta = var_theta**0.5
+			s = 1./(2*d)
+			sig_s = sig_d/(2*d**2)
+			sf0, sig_sf0 = scatt_f( s, mat )
+			sF = sf0 + f1 + 1j*f2
+			FF = 4*(sF*np.conj(sF)).real
+			sig_FF = 4 * (4*sf0**2*sig_sf0**2 + 4*f1**2*sig_f1**2 + 4*f2**2*sig_f2**2 + 4*sf0**2*f1**2*(sig_sf0**2/sf0**2 + sig_f1**2/f1**2) )**0.5
+			p = liste_p[i]
+			Lf, sig_Lf = lor_f( (theta, sig_theta) )
+			pf, sig_pf = pol_f( (theta, sig_theta), (alpha, sig_alpha) )
+			Tf, sig_Tf = temp_f( (s, sig_s) )
+			R = 1./V**2 * FF*p*Lf*pf*Tf
+			sig_R = R*(sig_FV**2/FV**2 + sig_FF**2/FF**2 + sig_Lf**2/Lf**2 + sig_pf**2/pf**2 + sig_Tf**2/Tf**2)**0.5
+			liste_pics[i].append(p)
+			liste_pics[i].append((d, sig_d))
+			liste_pics[i].append((theta, sig_theta))
+			liste_pics[i].append((FF, sig_FF))
+			liste_pics[i].append((Lf, sig_Lf))
+			liste_pics[i].append((pf, sig_pf))
+			liste_pics[i].append((Tf, sig_Tf))
+			liste_pics[i].append((R, sig_R))
 
 	#Calcul de la composition chimique globale de l'échantillon
 	phase_list[phase_id] = [descr, cryst_struct, (a, sig_a), (c, sig_c), V, liste_pics, mat, (FV, sig_FV), (strain, sig_strain)]
@@ -538,6 +577,7 @@ def calc_d( hkl, a, c = 0, cryst_syst = 'c' ):
 		cryst_syst : Système cristallographique :
 			'c' : Cubique (par défaut)
 			'h' : Hexagonal
+			'q' : Quadratique
 
 	"""	
 	
@@ -549,6 +589,8 @@ def calc_d( hkl, a, c = 0, cryst_syst = 'c' ):
 		return np.sqrt( a**2 / (h**2 + k**2 + l**2) )
 	elif cryst_syst == 'h':
 		return ( 4./3.*(h**2 + h*k + k**2)/a**2 + l**2/c**2 )**(-0.5)
+	elif cryst_syst == 'q':
+		return ( (h**2 + k**2)/a**2 + l**2/c**2 )**-0.5
 
 def calc_a( hkl, theta, lam ):
 	"""
@@ -2393,6 +2435,9 @@ def read_nmbr( nmbr ):
 	else:
 		incert = float(incert_str)*10**exp_incert
 	
+	if negatif == True:
+		nombre = -nombre
+
 	return( nombre, incert )
 	
 def write_nmbr( nombre, incert = 0, ndec = 8 ):
