@@ -962,6 +962,7 @@ class spectre:
 		self.fit.R_p = 100*s_abs_res/s_iobs		#[Parrish2004]
 		self.fit.R_wp = 100*( s_w_res_2/s_w_iobs_2 )**0.5#[Parrish2004]
 		self.fit.s_w_iobs_2 = s_w_iobs_2
+		self.fit.s_w_res_2 = s_w_res_2
 		self.est_noise()
 
 		self.etat.calcul = True
@@ -1605,7 +1606,36 @@ class spectre:
 				self.background_approx()
 				self.fit_calcul()
 				self.fit.GOF = ((self.fit.R_wp/100.)**2 * self.fit.s_w_iobs_2 / (len(self.raw_data.count) - m))**0.5
-				
+
+				#Calcul du facteur de correction
+				S2 = 0.
+				S1 = 0.
+				s1 = []
+				s2 = []
+				z = []
+				for i in range( len( self.raw_data.theta ) ):
+					ai = self.fit.residu.count[i]/(self.raw_data.count[i])**0.5
+					if i == 0:
+						zi = 0.
+					elif self.fit.residu.count[i]*self.fit.residu.count[i-1] < 0.:
+						zi = 0.
+					else:
+						ai_moins = self.fit.residu.count[i-1]/(self.raw_data.count[i-1])**0.5
+						zi = ( 2*(ai**2 + ai_moins**2))**0.5 / (2 + (2*(ai**2 + ai_moins**2))**0.5 ) 
+
+					
+					S2 += (1 - zi**2)*ai**2
+					S1 += zi*ai
+					if zi == 0.:
+						S2 += S1**2
+						S1 = 0.
+					s1.append(S1)
+					s2.append(S2)
+					z.append(zi)
+
+				self.fit.fact_corr = S2 / self.fit.s_w_res_2
+
+
 				#Mise à jour et affichage des données de l'évolution du calcul itératif
 				k += 1
 				self.fit.R_vec = np.append( self.fit.R_vec, self.fit.R )

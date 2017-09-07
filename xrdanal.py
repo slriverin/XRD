@@ -159,7 +159,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 
 		phase_list = dict
 			{'MatBase', [mat, emetteur, raie]}
-			{phase_id, [descr, cryst_struct, a, c, V, liste_pics, mat, FV, strain]}
+			{phase_id, [descr, cryst_struct, a, c, V, liste_pics, mat, FV, strain, corr_ori]}
 
 		liste_pics = list
 			[liste_pics[0], liste_pics[1] ... ]
@@ -175,6 +175,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		FV_sig_FV = phase[7]
 		strain_sig_strain = phase[8]
 		phase[7] = (FV_sig_FV[0], FV_sig_FV[1])
+		corr_ori = phase[9]
 
 	a, sig_a = a_sig_a
 	c, sig_c = c_sig_c
@@ -254,6 +255,11 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		V = a**3
 		fV = 1./V**2
 		sig_fV = 6./a**7 * sig_a
+		if maj == False:
+			corr_ori = {}
+			corr_ori['C410'] = (0., 0.)
+			corr_ori['C610'] = (0., 0.)
+			corr_ori['C810'] = (0., 0.)
 		
 		if liste_pics == []:
 			liste_pics = [ [(1, 1, 0)], [(2, 0, 0)], [(2, 1, 1)], [(2, 2, 0)] ]
@@ -297,6 +303,11 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		V = a**3
 		fV = 1./V**2
 		sig_fV = 6./a**7 * sig_a
+		if maj == False:
+			corr_ori = {}
+			corr_ori['C410'] = (0., 0.)
+			corr_ori['C610'] = (0., 0.)
+			corr_ori['C810'] = (0., 0.)
 
 		if liste_pics == []:
 			liste_pics =  [ [(1, 1, 1)], [(2, 0, 0)], [(2, 2, 0)], [(3, 1, 1)], [(2, 2, 2)], [(3, 3, 1)], [(4, 0, 0)] ]
@@ -341,6 +352,11 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		V = a**3
 		fV = 1./V**2
 		sig_fV = 6./a**7 * sig_a
+		if maj == False:
+			corr_ori = {}
+			corr_ori['C410'] = (0., 0.)
+			corr_ori['C610'] = (0., 0.)
+			corr_ori['C810'] = (0., 0.)
 
 		if liste_pics == []:
 			liste_pics =  [ [(1, 1, 1)], [(2, 2, 0)], [(3, 1, 1)], [(4, 0, 0)], [(3, 3, 1)], 
@@ -462,7 +478,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 			liste_pics[i].append((R, sig_R))
 
 	#Calcul de la composition chimique globale de l'échantillon
-	phase_list[phase_id] = [descr, cryst_struct, (a, sig_a), (c, sig_c), V, liste_pics, mat, (FV, sig_FV), (strain, sig_strain)]
+	phase_list[phase_id] = [descr, cryst_struct, (a, sig_a), (c, sig_c), V, liste_pics, mat, (FV, sig_FV), (strain, sig_strain), corr_ori]
 	MatBase = [['MatBase', 'm']]
 	w_tot = 0.
 	m_tot = 0.
