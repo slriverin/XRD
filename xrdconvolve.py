@@ -4,15 +4,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import wofz, erfc
 from scipy.optimize import fsolve, curve_fit
-from scipy.integrate import simps
+from scipy.integrate import simps, quad
 from scipy.interpolate import interp1d
 from copy import deepcopy
+import functools
+import math
 import os.path
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
 import xrdsim, xrdanal
 
-def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, alpha3 = False, affich = 0 ):
+def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, alpha3 = False, affich = 0, corr_asym = True ):
 	"""
 
 	Simule le spectre d'un échantillon standard
@@ -49,8 +51,12 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 	theta_range = raw_data.theta
 	count_range = raw_data.count*0
 	liste_f = []
+	if affich==1:
+		print('\tPhase : ' + phase_id )
 
 	for i in range( len( phase_data[5] ) ):
+		if affich==1:
+			print('\t\tPlan : ' + str(phase_data[5][i][0]))
 		theta_calc = phase_data[5][i][3][0] #1theta(rad)
 		R = phase_data[5][i][8][0]
 		FV = phase_data[7][0] #Fraction volumique
@@ -93,18 +99,78 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 		beta_l += beta_strain
 		k = beta_l/np.pi**0.5/beta_g
 
-		f_pic_1 = lambda theta: beta_l*I0lg**2*(wofz( np.pi**0.5*(theta - theta_obs)/beta_g + 1j*k )).real
+		def f_pic_1(theta):
+			return beta_l*I0lg**2*(wofz( np.pi**0.5*(theta - theta_obs)/beta_g + 1j*k )).real
 
 		theta_2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(theta_obs*np.pi/360) )
 		I0lg_2 = ratio_alpha**0.5*I0lg
 
 		f_pic_2 = lambda theta: beta_l*I0lg_2**2*(wofz( np.pi**0.5*(theta - theta_2)/beta_g + 1j*k )).real
-		liste_f.append(f_pic_1(theta_range))
-		liste_f.append(f_pic_2(theta_range))
 
-		for j in range( len( raw_data.theta ) ):
-			theta = theta_range[j]
-			count_range[j] += f_pic_1(theta) + f_pic_2(theta)
+		count_temp = np.zeros(len(raw_data.theta))
+		count_temp_2 = np.zeros(len(raw_data.theta))
+
+		#Correction pour asymétrie
+		if corr_asym == True :
+			S = instrum_data.mask
+			H = 24.0
+			L=instrum_data.R_diff
+			phi_min = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
+			phi_infl = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
+			cutoff=0.01*f_pic_1(theta_obs)
+			if theta_obs < 90:
+				surf_D = intD(theta_obs, phi_min, phi_infl, H, S, L)
+				for j in range( len( raw_data.theta) ):
+					phi = theta_range[j]
+					if f_pic_1(phi) < cutoff:
+						continue
+					fd = lambda t : f_D(t, theta_obs, phi_min, phi_infl, H, S, L)
+					f_asym = lambda t: fd(t)*f_pic_1(theta_obs+phi-t)/surf_D
+					count_temp[j] = quad(f_asym, phi_min, theta_obs)[0]
+					
+			else:
+				surf_D = intD(180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+				for j in range( len( raw_data.theta) ):
+					phi = theta_range[j]
+					if f_pic_1(phi) < cutoff:
+						continue
+					fd = lambda t : f_D(t, 180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+					f_asym = lambda t: fd(180.-t)*f_pic_1(theta_obs+phi-t)/surf_D
+					count_temp[j] = quad(f_asym, theta_obs, phi_min)[0]
+
+			#pic alpha2:
+			phi_min_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
+			phi_infl_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
+			surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
+			cutoff=0.01*f_pic_2(theta_2)
+			if theta_2 < 90:
+				surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
+				for j in range( len( raw_data.theta) ):
+					phi = theta_range[j]
+					if f_pic_2(phi) < cutoff:
+						continue
+					fd = lambda t : f_D(t, theta_2, phi_min_2, phi_infl_2, H, S, L)
+					f_asym = lambda t: fd(t)*f_pic_2(theta_2+phi-t)/surf_D_2
+					count_temp_2[j] = quad(f_asym, phi_min_2, theta_2)[0]
+			else:
+				surf_D_2 = intD(180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
+				for j in range( len( raw_data.theta) ):
+					phi = theta_range[j]
+					if f_pic_2(phi) < cutoff:
+						continue
+					fd = lambda t : f_D(t, 180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
+					f_asym = lambda t: fd(180.-t)*f_pic_2(theta_2+phi-t)/surf_D_2
+					count_temp_2[j] = quad(f_asym, theta_2, phi_min_2)[0]
+
+		else:
+			for j in range( len( raw_data.theta ) ):
+				theta = theta_range[j]
+				count_temp[j] = f_pic_1(theta)
+				count_temp_2[j] = f_pic_2(theta)
+
+		liste_f.append(count_temp)
+		liste_f.append(count_temp_2)
+		count_range += count_temp + count_temp_2		
 
 	if affich == 1:
 		xrdsim.trace(raw_data)
@@ -114,7 +180,7 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 
 	return theta_range, count_range, liste_f		
 
-def rietvelt_init( spectre, dict_phases, instrum_data ):
+def rietvelt_init( spectre, dict_phases, instrum_data, corr_asym = True ):
 	"""
 
 	Initie l'analyse de Rietvelt
@@ -176,6 +242,7 @@ def rietvelt_init( spectre, dict_phases, instrum_data ):
 	spectre.etat.rietvelt = True
 	spectre.etat.reg = True
 	spectre.etat.rietvelt_opt = False
+	spectre.etat.corr_asym = corr_asym
 	spectre.dict_phases = deepcopy(dict_phases)
 	spectre.instrum_data = deepcopy(instrum_data)
 	spectre.dict_args = {}
@@ -258,7 +325,7 @@ def rietvelt_calc( self, affich = 0 ):
 		if phase_id == 'MatBase':
 			continue
 
-		A = sim_std( self.dict_phases, phase_id, self.instrum_data, self.raw_data, self.instrum_data.ratio_alpha )
+		A = sim_std( self.dict_phases, phase_id, self.instrum_data, self.raw_data, self.instrum_data.ratio_alpha, affich=0 )
 		count_range += A[1]
 		for i in range( len( A[2] ) ):
 			liste_psf.append( A[2][i] )
@@ -524,7 +591,8 @@ def rietvelt_opt( self, affich = 1 ):
 			sp_dummy.dict_phases = xrdanal.phase( sp_dummy.dict_phases, phase[6], phase_id, phase[0], phase[1], maj = True )
 
 		sp_dummy.rietvelt_calc()
-		f_count = interp1d( sp_dummy.fit.data_reg.theta, sp_dummy.fit.data_reg.count )
+		f_count = interp1d( sp_dummy.fit.data_reg.theta, sp_dummy.fit.data_reg.count, fill_value=0. )
+		
 		
 		return f_count( theta )
 	
@@ -691,4 +759,74 @@ def correl_params( spectre, correl_min = 0.75 ):
 		for j in range( len( corrmat ) ):
 			if np.abs( corrmat[i, j] ) > correl_min:
 				print( '( %d, %d ) : %f ' %(i, j, corrmat[i, j]) )
+
+
+def f_h( phi, th_obs, L ):
+	try:
+		return L*((math.cos(phi*2*np.pi/360)/math.cos(th_obs*2*np.pi/360))**2 - 1.)**0.5
+
+	except ValueError:
+		return 0.
+
+	except TypeError:
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_h(phi[i])
+
+		return phi_vec	
+
+
+def f_W( phi, th_obs, phi_min, phi_infl, H, S, L ):
+	try:
+		if phi < phi_min:
+			return 0.
+		elif phi > th_obs:
+			return 0.
+		elif phi < phi_infl:
+			return H + S - f_h(phi, th_obs, L)
+		elif phi < th_obs:
+			return 2*S
+		else:
+			return 0.
+
+	except TypeError:	
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_W(phi[i])
+
+		return phi_vec	
+
+def f_D( phi, th_obs, phi_min, phi_infl, H, S, L ):
+	try:
+		return L*f_W(phi, th_obs, phi_min, phi_infl, H, S, L)/(2*H*f_h(phi, th_obs, L)*math.cos(phi*2*np.pi/360))
+
+	except ZeroDivisionError:
+		return 0.
+
+	except TypeError:
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_D(phi[i])
+
+		return phi_vec	
+
+def intD( th_obs, phi_min, phi_infl, H, S, L ):
+	th0 = th_obs*2*np.pi/360
+	a = 0.5*(th0 + np.pi/2)
+	#Intégrale contenant fonction W pour th0>thinfl, évaluée avec la singularité par la méthode des résidus
+	f_res = lambda t: 1j*a*np.exp(1j*t)/(np.cos(a*np.exp(1j*t))*( (np.cos(a*np.exp(1j*t)))**2/(np.cos(th0))**2 - 1)**0.5 )
+	I_res = -np.min([H, S])/H*quad(f_res, 0, np.pi/2)[0].real
+
+	#On doit soustraire à l'intégrale ci-dessus pour conserver seulement la plage entre l'inflexion et le max
+	f_soustr = lambda t: 1./(np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+	I_soustr = np.min([H, S])/H*quad( f_soustr, 0, phi_infl*2*np.pi/360 )[0]
+
+	#On rajoute ensuite le reste de la place, soit phi_min<phi<phi_infl
+	f_min_infl = lambda t: f_W(t*360./2/np.pi, th_obs, phi_min, phi_infl, H, S, L )/(2*H*np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+	I_min_infl = quad(f_min_infl, phi_min*2*np.pi/360, phi_infl*2*np.pi/360)[0]
+
+	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
 
