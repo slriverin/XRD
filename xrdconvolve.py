@@ -13,7 +13,10 @@ import os.path
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
 import xrdsim, xrdanal
+from XRD.XRD import funcs
 
+f_D = funcs.f_D
+intD = funcs.intD
 
 try:
 	input = raw_input
@@ -106,13 +109,14 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 		beta_l += beta_strain
 		k = beta_l/np.pi**0.5/beta_g
 
-		def f_pic_1(theta):
-			return beta_l*I0lg**2*(wofz( np.pi**0.5*(theta - theta_obs)/beta_g + 1j*k )).real
+		#def f_pic_1(theta):
+		#	return beta_l*I0lg**2*(wofz( np.pi**0.5*(theta - theta_obs)/beta_g + 1j*k )).real
+		f_pic_1 = funcs.def_f_pic( I0lg, theta_obs, beta_g, beta_l )
 
 		theta_2 = 360/np.pi*np.arcsin( lam_2/lam_1*np.sin(theta_obs*np.pi/360) )
 		I0lg_2 = ratio_alpha**0.5*I0lg
 
-		f_pic_2 = lambda theta: beta_l*I0lg_2**2*(wofz( np.pi**0.5*(theta - theta_2)/beta_g + 1j*k )).real
+		f_pic_2 = funcs.def_f_pic( I0lg_2, theta_2, beta_g, beta_l )
 
 		count_temp = np.zeros(len(raw_data.theta))
 		count_temp_2 = np.zeros(len(raw_data.theta))
@@ -769,72 +773,72 @@ def correl_params( spectre, correl_min = 0.75 ):
 				print( '( %d, %d ) : %f ' %(i, j, corrmat[i, j]) )
 
 
-def f_h( phi, th_obs, L ):
-	try:
-		return L*((math.cos(phi*2*np.pi/360)/math.cos(th_obs*2*np.pi/360))**2 - 1.)**0.5
+#def f_h( phi, th_obs, L ):
+#	try:
+#		return L*((math.cos(phi*2*np.pi/360)/math.cos(th_obs*2*np.pi/360))**2 - 1.)**0.5
+#
+#	except ValueError:
+#		return 0.
+#
+#	except TypeError:
+#		n = len(phi)
+#		phi_vec = np.zeros(n)
+#		for i in range(n):
+#			phi_vec[i] = f_h(phi[i])
+#
+#		return phi_vec	
 
-	except ValueError:
-		return 0.
 
-	except TypeError:
-		n = len(phi)
-		phi_vec = np.zeros(n)
-		for i in range(n):
-			phi_vec[i] = f_h(phi[i])
+#def f_W( phi, th_obs, phi_min, phi_infl, H, S, L ):
+#	try:
+#		if phi < phi_min:
+#			return 0.
+#		elif phi > th_obs:
+#			return 0.
+#		elif phi < phi_infl:
+#			return H + S - f_h(phi, th_obs, L)
+#		elif phi < th_obs:
+#			return 2*S
+#		else:
+#			return 0.
+#
+#	except TypeError:	
+#		n = len(phi)
+#		phi_vec = np.zeros(n)
+#		for i in range(n):
+#			phi_vec[i] = f_W(phi[i])
+#
+#		return phi_vec	
 
-		return phi_vec	
+#def f_D( phi, th_obs, phi_min, phi_infl, H, S, L ):
+#	try:
+#		return L*f_W(phi, th_obs, phi_min, phi_infl, H, S, L)/(2*H*f_h(phi, th_obs, L)*math.cos(phi*2*np.pi/360))
+#
+#	except ZeroDivisionError:
+#		return 0.
+#
+#	except TypeError:
+#		n = len(phi)
+#		phi_vec = np.zeros(n)
+#		for i in range(n):
+#			phi_vec[i] = f_D(phi[i])
+#
+#		return phi_vec	
 
-
-def f_W( phi, th_obs, phi_min, phi_infl, H, S, L ):
-	try:
-		if phi < phi_min:
-			return 0.
-		elif phi > th_obs:
-			return 0.
-		elif phi < phi_infl:
-			return H + S - f_h(phi, th_obs, L)
-		elif phi < th_obs:
-			return 2*S
-		else:
-			return 0.
-
-	except TypeError:	
-		n = len(phi)
-		phi_vec = np.zeros(n)
-		for i in range(n):
-			phi_vec[i] = f_W(phi[i])
-
-		return phi_vec	
-
-def f_D( phi, th_obs, phi_min, phi_infl, H, S, L ):
-	try:
-		return L*f_W(phi, th_obs, phi_min, phi_infl, H, S, L)/(2*H*f_h(phi, th_obs, L)*math.cos(phi*2*np.pi/360))
-
-	except ZeroDivisionError:
-		return 0.
-
-	except TypeError:
-		n = len(phi)
-		phi_vec = np.zeros(n)
-		for i in range(n):
-			phi_vec[i] = f_D(phi[i])
-
-		return phi_vec	
-
-def intD( th_obs, phi_min, phi_infl, H, S, L ):
-	th0 = th_obs*2*np.pi/360
-	a = 0.5*(th0 + np.pi/2)
-	#Intégrale contenant fonction W pour th0>thinfl, évaluée avec la singularité par la méthode des résidus
-	f_res = lambda t: 1j*a*np.exp(1j*t)/(np.cos(a*np.exp(1j*t))*( (np.cos(a*np.exp(1j*t)))**2/(np.cos(th0))**2 - 1)**0.5 )
-	I_res = -np.min([H, S])/H*quad(f_res, 0, np.pi/2)[0].real
-
-	#On doit soustraire à l'intégrale ci-dessus pour conserver seulement la plage entre l'inflexion et le max
-	f_soustr = lambda t: 1./(np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
-	I_soustr = np.min([H, S])/H*quad( f_soustr, 0, phi_infl*2*np.pi/360 )[0]
-
-	#On rajoute ensuite le reste de la place, soit phi_min<phi<phi_infl
-	f_min_infl = lambda t: f_W(t*360./2/np.pi, th_obs, phi_min, phi_infl, H, S, L )/(2*H*np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
-	I_min_infl = quad(f_min_infl, phi_min*2*np.pi/360, phi_infl*2*np.pi/360)[0]
-
-	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
+#def intD( th_obs, phi_min, phi_infl, H, S, L ):
+#	th0 = th_obs*2*np.pi/360
+#	a = 0.5*(th0 + np.pi/2)
+#	#Intégrale contenant fonction W pour th0>thinfl, évaluée avec la singularité par la méthode des résidus
+#	f_res = lambda t: 1j*a*np.exp(1j*t)/(np.cos(a*np.exp(1j*t))*( (np.cos(a*np.exp(1j*t)))**2/(np.cos(th0))**2 - 1)**0.5 )
+#	I_res = -np.min([H, S])/H*quad(f_res, 0, np.pi/2)[0].real
+#
+#	#On doit soustraire à l'intégrale ci-dessus pour conserver seulement la plage entre l'inflexion et le max
+#	f_soustr = lambda t: 1./(np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+#	I_soustr = np.min([H, S])/H*quad( f_soustr, 0, phi_infl*2*np.pi/360 )[0]
+#
+#	#On rajoute ensuite le reste de la place, soit phi_min<phi<phi_infl
+#	f_min_infl = lambda t: f_W(t*360./2/np.pi, th_obs, phi_min, phi_infl, H, S, L )/(2*H*np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+#	I_min_infl = quad(f_min_infl, phi_min*2*np.pi/360, phi_infl*2*np.pi/360)[0]
+#
+#	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
 
