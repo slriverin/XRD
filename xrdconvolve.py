@@ -14,6 +14,13 @@ this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
 import xrdsim, xrdanal
 
+
+try:
+	input = raw_input
+except:
+	pass
+
+
 def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, alpha3 = False, affich = 0, corr_asym = True ):
 	"""
 
@@ -61,7 +68,7 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 		R = phase_data[5][i][8][0]
 		FV = phase_data[7][0] #Fraction volumique
 
-		theta_obs = (2*theta_calc + dth0 - 2*s*np.cos( theta_calc )/R_diff - K1*DS**2/6/np.tan( theta_calc ) - K2*(sol**2/12 + h**2/3/R_diff**2)/np.tan( theta_calc*2 ) )*360/2/np.pi #2theta
+		theta_obs = (2*theta_calc + dth0 - 2*s*np.cos( theta_calc )/R_diff - K1*DS**2/6/np.tan( theta_calc ) - K2*sol**2/6/np.tan( theta_calc*2 ) )*360/2/np.pi #2theta
 		FWHM = (U*(np.tan(theta_obs*np.pi/360))**2 + V*np.tan(theta_obs*np.pi/360) + W)**0.5 * 360/2/np.pi
 		ff = b*theta_obs + c
 
@@ -110,6 +117,8 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 		count_temp = np.zeros(len(raw_data.theta))
 		count_temp_2 = np.zeros(len(raw_data.theta))
 
+		PBratio = np.max(raw_data.count)/np.min(raw_data.count)
+
 		#Correction pour asymétrie
 		if corr_asym == True :
 			S = instrum_data.mask
@@ -117,7 +126,7 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 			L=instrum_data.R_diff
 			phi_min = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
 			phi_infl = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
-			cutoff=0.01*f_pic_1(theta_obs)
+			cutoff=0.1/PBratio*f_pic_1(theta_obs)
 			if theta_obs < 90:
 				surf_D = intD(theta_obs, phi_min, phi_infl, H, S, L)
 				for j in range( len( raw_data.theta) ):
@@ -142,7 +151,7 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 			phi_min_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
 			phi_infl_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
 			surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
-			cutoff=0.01*f_pic_2(theta_2)
+			cutoff=0.1/PBratio*f_pic_2(theta_2)
 			if theta_2 < 90:
 				surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
 				for j in range( len( raw_data.theta) ):
@@ -231,7 +240,7 @@ def rietvelt_init( spectre, dict_phases, instrum_data, corr_asym = True ):
 
 	if spectre.etat.rietvelt == True :
 		print( u'Régression de Rietvelt déjà existante. Écraser?' )
-		choix = raw_input( '1 : Oui; autre : non. ... : ' )
+		choix = input( '1 : Oui; autre : non. ... : ' )
 		if choix != '1':
 			return
 
@@ -325,7 +334,7 @@ def rietvelt_calc( self, affich = 0 ):
 		if phase_id == 'MatBase':
 			continue
 
-		A = sim_std( self.dict_phases, phase_id, self.instrum_data, self.raw_data, self.instrum_data.ratio_alpha, affich=0 )
+		A = sim_std( self.dict_phases, phase_id, self.instrum_data, self.raw_data, self.instrum_data.ratio_alpha, corr_asym = self.etat.corr_asym, affich=0 )
 		count_range += A[1]
 		for i in range( len( A[2] ) ):
 			liste_psf.append( A[2][i] )
@@ -753,7 +762,6 @@ def correl_params( spectre, correl_min = 0.75 ):
 	Vx = spectre.fit.Vx
 	diagmat = np.diagflat( np.diagonal( Vx )**-0.5 )
 	corrmat = np.matmul( diagmat, np.matmul( Vx, diagmat) )
-	print corrmat
 	print( 'R > %f : ' %correl_min )
 	for i in range( len( corrmat ) ):
 		for j in range( len( corrmat ) ):

@@ -56,12 +56,17 @@ from scipy.interpolate import interp1d
 from scipy.linalg import solve_triangular, solve
 from scipy.special import wofz
 import copy
-import mater
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
 if this_dir not in sys.path:
 	sys.path.insert(0, this_dir)
+import mater
 import xrdanal
+
+try:
+	input = raw_input
+except:
+	pass
 
 
 rc('font',**{'family':'serif','serif':['Palatino']})
@@ -123,12 +128,12 @@ class spectre:
 		"""	
 		
 		if len( self.raw_data.theta ) != 0:
-			r = raw_input( u'Écraser données? 1 = oui autre = non : '.encode('cp850') ) 
+			r = input( u'Écraser données? 1 = oui autre = non : '.encode('cp850') ) 
 			if r.isdigit() == True and int( r ) != 1:
 				return
 
 		if filename == '':
-			filename = raw_input( 'Nom du fichier? : ')
+			filename = input( 'Nom du fichier? : ')
 			if not os.path.exists( filename ):
 				print( 'Fichier introuvable' )
 				return
@@ -139,7 +144,7 @@ class spectre:
 		self.filename = filename
 		
 		dataread = 0
-		with open(filename, 'rb') as csvfile:
+		with open(filename, 'r', encoding="ascii") as csvfile:
 			csvreader = csv.reader( csvfile, delimiter = ',' )
 			for row in csvreader:
 				if dataread == 1:	
@@ -258,7 +263,10 @@ class spectre:
 			return
 
 		if len(self.peak_list) > 0:
-			inst = raw_input( u'Liste de pics déjà existante... Sera écrasée... continuer? 1 = oui, autre = non ... : '.encode('cp850') )
+			try:
+				inst = input( 'Liste de pics déjà existante... Sera écrasée... continuer? 1 = oui, autre = non ... : ' )
+			except:
+				inst = input( u'Liste de pics déjà existante... Sera écrasée... continuer? 1 = oui, autre = non ... : '.encode('cp850') )
 			if inst != '1':
 				return
 
@@ -344,16 +352,16 @@ class spectre:
 		liste_del = []
 		for i in range( len( self.peak_list ) ):
 			print( str(self.peak_list[i][0]) + '\t' + str(np.round( self.peak_list[i][2], 3)) + '\t' + self.peak_list[i][4] + '\t' + str(self.peak_list[i][5]) )
-			instruction = raw_input( '<d> pour effacer, <m> pour modifier, autre touche pour conserver tel quel ... : ' )
+			instruction = input( '<d> pour effacer, <m> pour modifier, autre touche pour conserver tel quel ... : ' )
 			if instruction == 'd':
 				liste_del.append( self.peak_list[i][0] )
 				
 			elif instruction == 'm':
-				self.peak_list[i][4] = raw_input( 'Phase? ... : ')
+				self.peak_list[i][4] = input( 'Phase? ... : ')
 				print('Plan? ... : ')
-				h = raw_input( 'h ... : ' )
-				k = raw_input( 'k ... : ' )
-				l = raw_input( 'l ... : ' )
+				h = input( 'h ... : ' )
+				k = input( 'k ... : ' )
+				l = input( 'l ... : ' )
 				
 				self.peak_list[i][5] = ( int(h), int(k), int(l) ) 
 
@@ -575,7 +583,7 @@ class spectre:
 		"""
 
 		if self.etat.peak_list == False:
-			print 'Impossible de faire la régression, liste de pics manquante'
+			print( 'Impossible de faire la régression, liste de pics manquante')
 			return
 
 		if not( PSF == 'g' or PSF =='l' or PSF == 'v' or PSF == 'v2' or PSF[0:3] == 'v2k' or PSF[0:3] == 'v3k' ):
@@ -1034,7 +1042,7 @@ class spectre:
 			interv = float( meth[3:] )
 			dernierpt = self.raw_data.theta[0]
 			for theta in self.raw_data.theta: 
-				 if theta - dernierpt > interv:
+				if theta - dernierpt > interv:
 					count = float( f_count(theta) )
 					self.back_pts_list.append( [theta, count, count**0.5] )
 					dernierpt = theta

@@ -35,7 +35,11 @@ import os.path
 import csv
 this_dir, this_filename = os.path.split( __file__ )
 DATA_PATH = os.path.join( this_dir, "data" )
-import xrdsim
+
+try:
+	input = input
+except:
+	pass
 
 def calc_surf( spectre ):
 	if spectre.etat.calcul == False:
@@ -191,7 +195,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		phase_list['MatBase'] = [mat, emetteur, raie]
 	
 	if phase_id in phase_list and maj == False:
-		ow = raw_input( u'Phase déjà existante... écraser les données? 1 = oui, autre = non ... : '.encode('cp850') )
+		ow = input( u'Phase déjà existante... écraser les données? 1 = oui, autre = non ... : '.encode('cp850') )
 		if ow != '1':
 			return
 
@@ -209,7 +213,7 @@ def phase( phase_list, mat, phase_id, descr, cryst_struct, emetteur = 'Cu', raie
 		print( u'2. Donner à cette phase la fraction disponible restante, soit : %.3f' %(1 - FV_tot) )
 		print( '3 ou autre. Annuler' )
 		print( u'L\'incertitude sera calculée à partir des incertitudes des autres fractions volumiques' )
-		choix = raw_input( 'Choix? ... : ' )
+		choix = input( 'Choix? ... : ' )
 		if choix == '1':
 			for phase in phase_list:
 				if phase == 'MatBase':
@@ -687,7 +691,7 @@ def scatt_f( s, mat = 'Fe' ):
 	return (s_f, sig_sf)
 
 
-def pol_f( (theta, sig_theta), (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5) ):
+def pol_f( theta_sig_theta, alpha_sig_alpha = (13.3*2*np.pi/360, 4e-5) ):
 	"""
 	Fonction calculant le facteur de polarisation [ITC vol. C., sec. 6.2.2]
 
@@ -705,6 +709,8 @@ def pol_f( (theta, sig_theta), (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5) ):
 
 	"""
 
+	theta, sig_theta = theta_sig_theta
+	alpha, sig_alpha = alpha_sig_alpha
 	pf =  (1. + np.cos(2.*alpha)**2. * np.cos(2.*theta)**2. ) /  (1. + np.cos(2.*alpha)**2. )
 	k = (np.cos(2*alpha))**2
 	sig_k = 4*np.cos(2*alpha)*np.sin(2*alpha)*sig_alpha
@@ -714,7 +720,7 @@ def pol_f( (theta, sig_theta), (alpha, sig_alpha) = (13.3*2*np.pi/360, 4e-5) ):
 	return (pf, sig_pf)
 
 
-def lor_f( (theta, sig_theta) ):
+def lor_f( theta_sig_theta ):
 	"""
 	Fonction calculant le facteur de Lorentz [ITC vol. C, sec. 6.2.5]
 
@@ -725,11 +731,12 @@ def lor_f( (theta, sig_theta) ):
 
 	"""
 
+	theta, sig_theta = theta_sig_theta
 	Lf = 1 / (np.sin(theta)**2 * np.cos(theta))
 	sig_Lf = (-2/(np.sin(theta))**3 + 1/(np.sin(theta)*(np.cos(theta))**2))*sig_theta
 	return (Lf, sig_Lf)
 
-def temp_f( (s, sig_s), mat = 'Fe', (T, sig_T) = (293., 1) ):
+def temp_f( s_sig_s, mat = 'Fe', T_sig_T = (293., 1) ):
 	"""
 	Fonction calculant le facteur de la température exp(-2*M)  [Cullity]
 
@@ -752,6 +759,9 @@ def temp_f( (s, sig_s), mat = 'Fe', (T, sig_T) = (293., 1) ):
 	
 
 	"""
+
+	s, sig_s = s_sig_s
+	T, sig_T = T_sig_T
 
 	if type( mat ) == str:
 		X = read_el( mat )
@@ -870,10 +880,10 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0, ret_incert = Fa
 
 	if not os.path.exists( os.path.join( DATA_PATH, 'Coeff_abs.csv' ) ):
 		print( u'Erreur, fichier de données introuvable' )
-		print DATA_PATH
+		print( DATA_PATH )
 		return
 
-	with open( os.path.join( DATA_PATH, 'Coeff_abs.csv' ), 'rb' ) as csvfile:
+	with open( os.path.join( DATA_PATH, 'Coeff_abs.csv' ), 'r', encoding='latin-1' ) as csvfile:
 		csvreader = csv.reader( csvfile, delimiter = ',' )
 		for row in csvreader:
 			if row[0] == 'Lambda':
@@ -920,7 +930,7 @@ def read_el( absorbeur, emetteur = 'Cu', raie = 'a', affich = 0, ret_incert = Fa
 						plt.show()
 				return [mu_m, Z, A, rho, lam, DebyeT, a, b, c, f1, f2, incertsf]
 
-	print 'Erreur, absorbeur inexistant'		
+	print( 'Erreur, absorbeur inexistant' )
 
 
 def mat_conv( mat, affich = 0 ):
@@ -1281,7 +1291,7 @@ def quant( spectre, liste_phases, affich = 1 ):
 			print( str(hkl) + '  ' + str(round( 2.*th_obs, 3 ) ) + '\t' + str(round( 2.*th_theo, 3 ) ) + '\t' + str(round( 2.*(th_obs-th_theo), 2 )) + '\t' + str( round( 100.*R/R_tot, 3)) + '\t' + str( round( 100.*A/A_tot, 3)) + '\t  ' + "%.3g" % ((R/R_tot)/(A/A_tot)) + '\t    ' + str(round(a_calc, 3)) )
 		print( u'Paramètre de maille moyen calculé : ' + str(round(np.mean(a_vec), 3) ) )	
 
-		print '\n----\n'
+		print( '\n----\n')
 
 	A_tot_max = 0
 	if len( liste_phases_sim ) == 2:
@@ -2284,7 +2294,6 @@ def opt_form_fact( spectre, dict_phases, phase_id, instrum_data, affich = 0 ):
 
 	f = lambda th, b, c: 0*th**2 + b*th + c 
 	beta, V_beta = curve_fit( f, xdata, ydata, sigma = sigma, absolute_sigma = True )
-	print beta
 	b = beta[0]
 	sig_b = V_beta[0, 0]**0.5
 	c = beta[1]
