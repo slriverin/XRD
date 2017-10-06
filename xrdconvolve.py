@@ -15,8 +15,9 @@ DATA_PATH = os.path.join( this_dir, "data" )
 import xrdsim, xrdanal
 from XRD.XRD import funcs
 
-f_D = funcs.f_D
-intD = funcs.intD
+#f_D = funcs.f_D
+#f_W = funcs.f_W
+
 
 try:
 	input = raw_input
@@ -117,6 +118,8 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 		I0lg_2 = ratio_alpha**0.5*I0lg
 
 		f_pic_2 = funcs.def_f_pic( I0lg_2, theta_2, beta_g, beta_l )
+		#def f_pic_2(theta):
+		#	return beta_l*I0lg_2**2*(wofz( np.pi**0.5*(theta_2 - theta_obs)/beta_g + 1j*k )).real
 
 		count_temp = np.zeros(len(raw_data.theta))
 		count_temp_2 = np.zeros(len(raw_data.theta))
@@ -128,52 +131,56 @@ def sim_std( dict_phases, phase_id, instrum_data, raw_data, ratio_alpha = 0.52, 
 			S = instrum_data.mask
 			H = 24.0
 			L=instrum_data.R_diff
-			phi_min = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
-			phi_infl = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
+			#phi_min = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
+			#phi_infl = np.arccos( np.cos(theta_obs*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
 			cutoff=0.1/PBratio*f_pic_1(theta_obs)
-			if theta_obs < 90:
-				surf_D = intD(theta_obs, phi_min, phi_infl, H, S, L)
-				for j in range( len( raw_data.theta) ):
-					phi = theta_range[j]
-					if f_pic_1(phi) < cutoff:
-						continue
-					fd = lambda t : f_D(t, theta_obs, phi_min, phi_infl, H, S, L)
-					f_asym = lambda t: fd(t)*f_pic_1(theta_obs+phi-t)/surf_D
-					count_temp[j] = quad(f_asym, phi_min, theta_obs)[0]
+
+			count_temp = np.array(funcs.corr_asym( theta_range, theta_obs, H, S, L, cutoff, f_pic_1 ))
+			#if theta_obs < 90:
+			#	surf_D = intD(theta_obs, phi_min, phi_infl, H, S, L)
+			#	for j in range( len( raw_data.theta) ):
+			#		phi = theta_range[j]
+			#		if f_pic_1(phi) < cutoff:
+			#			continue
+			#		fd = lambda t : f_D(t, theta_obs, phi_min, phi_infl, H, S, L)
+			#		f_asym = lambda t: fd(t)*f_pic_1(theta_obs+phi-t)/surf_D
+			#		count_temp[j] = quad(f_asym, phi_min, theta_obs)[0]
 					
-			else:
-				surf_D = intD(180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
-				for j in range( len( raw_data.theta) ):
-					phi = theta_range[j]
-					if f_pic_1(phi) < cutoff:
-						continue
-					fd = lambda t : f_D(t, 180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
-					f_asym = lambda t: fd(180.-t)*f_pic_1(theta_obs+phi-t)/surf_D
-					count_temp[j] = quad(f_asym, theta_obs, phi_min)[0]
+			#else:
+			#	surf_D = intD(180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+			#	for j in range( len( raw_data.theta) ):
+			#		phi = theta_range[j]
+			#		if f_pic_1(phi) < cutoff:
+			#			continue
+			#		fd = lambda t : f_D(t, 180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+			#		f_asym = lambda t: fd(180.-t)*f_pic_1(theta_obs+phi-t)/surf_D
+			#		count_temp[j] = quad(f_asym, theta_obs, phi_min)[0]
 
 			#pic alpha2:
-			phi_min_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
-			phi_infl_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
-			surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
+			#phi_min_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
+			#phi_infl_2 = np.arccos( np.cos(theta_2*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
+			#surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
 			cutoff=0.1/PBratio*f_pic_2(theta_2)
-			if theta_2 < 90:
-				surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
-				for j in range( len( raw_data.theta) ):
-					phi = theta_range[j]
-					if f_pic_2(phi) < cutoff:
-						continue
-					fd = lambda t : f_D(t, theta_2, phi_min_2, phi_infl_2, H, S, L)
-					f_asym = lambda t: fd(t)*f_pic_2(theta_2+phi-t)/surf_D_2
-					count_temp_2[j] = quad(f_asym, phi_min_2, theta_2)[0]
-			else:
-				surf_D_2 = intD(180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
-				for j in range( len( raw_data.theta) ):
-					phi = theta_range[j]
-					if f_pic_2(phi) < cutoff:
-						continue
-					fd = lambda t : f_D(t, 180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
-					f_asym = lambda t: fd(180.-t)*f_pic_2(theta_2+phi-t)/surf_D_2
-					count_temp_2[j] = quad(f_asym, theta_2, phi_min_2)[0]
+
+			count_temp_2 = np.array( funcs.corr_asym( theta_range, theta_2, H, S, L, cutoff, f_pic_2 ))
+			#if theta_2 < 90:
+			#	surf_D_2 = intD(theta_2, phi_min_2, phi_infl_2, H, S, L)
+			#	for j in range( len( raw_data.theta) ):
+			#		phi = theta_range[j]
+			#		if f_pic_2(phi) < cutoff:
+			#			continue
+			#		fd = lambda t : f_D(t, theta_2, phi_min_2, phi_infl_2, H, S, L)
+			#		f_asym = lambda t: fd(t)*f_pic_2(theta_2+phi-t)/surf_D_2
+			#		count_temp_2[j] = quad(f_asym, phi_min_2, theta_2)[0]
+			#else:
+			#	surf_D_2 = intD(180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
+			#	for j in range( len( raw_data.theta) ):
+			#		phi = theta_range[j]
+			#		if f_pic_2(phi) < cutoff:
+			#			continue
+			#		fd = lambda t : f_D(t, 180. - theta_2, 180. - phi_min_2, 180. - phi_infl_2, H, S, L)
+			#		f_asym = lambda t: fd(180.-t)*f_pic_2(theta_2+phi-t)/surf_D_2
+			#		count_temp_2[j] = quad(f_asym, theta_2, phi_min_2)[0]
 
 		else:
 			for j in range( len( raw_data.theta ) ):
@@ -773,72 +780,72 @@ def correl_params( spectre, correl_min = 0.75 ):
 				print( '( %d, %d ) : %f ' %(i, j, corrmat[i, j]) )
 
 
-#def f_h( phi, th_obs, L ):
-#	try:
-#		return L*((math.cos(phi*2*np.pi/360)/math.cos(th_obs*2*np.pi/360))**2 - 1.)**0.5
-#
-#	except ValueError:
-#		return 0.
-#
-#	except TypeError:
-#		n = len(phi)
-#		phi_vec = np.zeros(n)
-#		for i in range(n):
-#			phi_vec[i] = f_h(phi[i])
-#
-#		return phi_vec	
+def f_h( phi, th_obs, L ):
+	try:
+		return L*((math.cos(phi*2*np.pi/360)/math.cos(th_obs*2*np.pi/360))**2 - 1.)**0.5
+
+	except ValueError:
+		return 0.
+
+	except TypeError:
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_h(phi[i])
+
+		return phi_vec	
 
 
-#def f_W( phi, th_obs, phi_min, phi_infl, H, S, L ):
-#	try:
-#		if phi < phi_min:
-#			return 0.
-#		elif phi > th_obs:
-#			return 0.
-#		elif phi < phi_infl:
-#			return H + S - f_h(phi, th_obs, L)
-#		elif phi < th_obs:
-#			return 2*S
-#		else:
-#			return 0.
-#
-#	except TypeError:	
-#		n = len(phi)
-#		phi_vec = np.zeros(n)
-#		for i in range(n):
-#			phi_vec[i] = f_W(phi[i])
-#
-#		return phi_vec	
+def f_W( phi, th_obs, phi_min, phi_infl, H, S, L ):
+	try:
+		if phi < phi_min:
+			return 0.
+		elif phi > th_obs:
+			return 0.
+		elif phi < phi_infl:
+			return H + S - f_h(phi, th_obs, L)
+		elif phi < th_obs:
+			return 2*S
+		else:
+			return 0.
 
-#def f_D( phi, th_obs, phi_min, phi_infl, H, S, L ):
-#	try:
-#		return L*f_W(phi, th_obs, phi_min, phi_infl, H, S, L)/(2*H*f_h(phi, th_obs, L)*math.cos(phi*2*np.pi/360))
-#
-#	except ZeroDivisionError:
-#		return 0.
-#
-#	except TypeError:
-#		n = len(phi)
-#		phi_vec = np.zeros(n)
-#		for i in range(n):
-#			phi_vec[i] = f_D(phi[i])
-#
-#		return phi_vec	
+	except TypeError:	
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_W(phi[i])
 
-#def intD( th_obs, phi_min, phi_infl, H, S, L ):
-#	th0 = th_obs*2*np.pi/360
-#	a = 0.5*(th0 + np.pi/2)
-#	#Intégrale contenant fonction W pour th0>thinfl, évaluée avec la singularité par la méthode des résidus
-#	f_res = lambda t: 1j*a*np.exp(1j*t)/(np.cos(a*np.exp(1j*t))*( (np.cos(a*np.exp(1j*t)))**2/(np.cos(th0))**2 - 1)**0.5 )
-#	I_res = -np.min([H, S])/H*quad(f_res, 0, np.pi/2)[0].real
-#
-#	#On doit soustraire à l'intégrale ci-dessus pour conserver seulement la plage entre l'inflexion et le max
-#	f_soustr = lambda t: 1./(np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
-#	I_soustr = np.min([H, S])/H*quad( f_soustr, 0, phi_infl*2*np.pi/360 )[0]
-#
-#	#On rajoute ensuite le reste de la place, soit phi_min<phi<phi_infl
-#	f_min_infl = lambda t: f_W(t*360./2/np.pi, th_obs, phi_min, phi_infl, H, S, L )/(2*H*np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
-#	I_min_infl = quad(f_min_infl, phi_min*2*np.pi/360, phi_infl*2*np.pi/360)[0]
-#
-#	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
+		return phi_vec	
+
+def f_D( phi, th_obs, phi_min, phi_infl, H, S, L ):
+	try:
+		return L*f_W(phi, th_obs, phi_min, phi_infl, H, S, L)/(2*H*f_h(phi, th_obs, L)*math.cos(phi*2*np.pi/360))
+
+	except ZeroDivisionError:
+		return 0.
+
+	except TypeError:
+		n = len(phi)
+		phi_vec = np.zeros(n)
+		for i in range(n):
+			phi_vec[i] = f_D(phi[i])
+
+		return phi_vec	
+
+def intD( th_obs, phi_min, phi_infl, H, S, L ):
+	th0 = th_obs*2*np.pi/360
+	a = 0.5*(th0 + np.pi/2)
+	#Intégrale contenant fonction W pour th0>thinfl, évaluée avec la singularité par la méthode des résidus
+	f_res = lambda t: 1j*a*np.exp(1j*t)/(np.cos(a*np.exp(1j*t))*( (np.cos(a*np.exp(1j*t)))**2/(np.cos(th0))**2 - 1)**0.5 )
+	I_res = -np.min([H, S])/H*quad(f_res, 0, np.pi/2)[0].real
+
+	#On doit soustraire à l'intégrale ci-dessus pour conserver seulement la plage entre l'inflexion et le max
+	f_soustr = lambda t: 1./(np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+	I_soustr = np.min([H, S])/H*quad( f_soustr, 0, phi_infl*2*np.pi/360 )[0]
+
+	#On rajoute ensuite le reste de la place, soit phi_min<phi<phi_infl
+	f_min_infl = lambda t: f_W(t*360./2/np.pi, th_obs, phi_min, phi_infl, H, S, L )/(2*H*np.cos(t)*( (np.cos(t))**2/(np.cos(th0))**2 - 1)**0.5)
+	I_min_infl = quad(f_min_infl, phi_min*2*np.pi/360, phi_infl*2*np.pi/360)[0]
+
+	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
 

@@ -4,4 +4,5 @@ import numpy
 
 setup(
 		ext_modules = cythonize("funcs.pyx", include_path = [numpy.get_include()]),
+
 		)

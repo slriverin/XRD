@@ -2,9 +2,12 @@ cimport scipy.special.cython_special as csc
 from scipy.integrate import quad
 import numpy as np
 cimport numpy as np
+from cpython cimport array
+import array
 
 cdef extern from "math.h":
 	double cos "cos" (double)
+	double acos "acos" (double)
 
 import numpy as np
 
@@ -32,7 +35,7 @@ cdef double f_W( double phi, double th_obs, double phi_min, double phi_infl, dou
 	else:
 		return 2*S
 
-def f_D( double phi, double th_obs, double phi_min, double phi_infl, double H, double S, double L ):
+cdef double f_D( double phi, double th_obs, double phi_min, double phi_infl, double H, double S, double L ):
 	cdef double W
 	if phi < phi_min:
 		return 0
@@ -47,7 +50,7 @@ def f_D( double phi, double th_obs, double phi_min, double phi_infl, double H, d
 	except ZeroDivisionError:
 		return 0
 
-def intD( th_obs, phi_min, phi_infl, H, S, L):
+cdef double intD( double th_obs, double phi_min, double phi_infl, double H, double S, double L):
 	cdef double th0 = th_obs*2*np.pi/360
 	cdef double a = 0.5*(th0 + np.pi/2)
 	
@@ -69,16 +72,31 @@ def intD( th_obs, phi_min, phi_infl, H, S, L):
 	
 	return (I_res - I_soustr + I_min_infl)*360/2/np.pi
 
-def f_asym( double phi, double I0lg, double theta_obs, double beta_g, double beta_l, double phi_min, double phi_infl, double H, double S, double L,  double cutoff ):
-	f_pic = def_f_pic( I0lg, theta_obs, beta_g, beta_l )
-	surf_D = intD( theta_obs, phi_min, phi_infl, H, S, L )
-	def fd( double t ):
-		return f_D( t, theta_obs, phi_min, phi_infl, H, S, L)
-	def f_asym( double t ):
-		return fd(t)*f_pic(theta_obs+phi-t)/surf_D
-
-#	def f_tot( double phi ):
-#		return quad( f_asym, phi_min, theta_obs, args=(phi) )[0]
-	return f_asym
+def corr_asym( theta_range, double theta_obs, double H, double S, double L, double cutoff, f_pic ):
 	
+	cdef double phi_min = acos( cos( theta_obs*2*np.pi/360)*(((H+S)/L)**2+1)**0.5 )*360/2/np.pi
+	cdef double phi_infl = acos( cos( theta_obs*2*np.pi/360)*(((H-S)/L)**2+1)**0.5 )*360/2/np.pi
+	cdef int n = len( theta_range )
+	count_temp = np.zeros( n )
 
+	if theta_obs < 90:
+		surf_D = intD(theta_obs, phi_min, phi_infl, H, S, L)
+		for j in range( n ):
+			phi = theta_range[j]
+			if f_pic(phi) < cutoff:
+				continue
+			fd = lambda t : f_D(t, theta_obs, phi_min, phi_infl, H, S, L)
+			f_asym = lambda t: fd(t)*f_pic(theta_obs+phi-t)/surf_D
+			count_temp[j] = quad(f_asym, phi_min, theta_obs)[0]
+			
+	else:
+		surf_D = intD(180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+		for j in range( n ):
+			phi = theta_range[j]
+			if f_pic(phi) < cutoff:
+				continue
+			fd = lambda t : f_D(t, 180. - theta_obs, 180. - phi_min, 180. - phi_infl, H, S, L)
+			f_asym = lambda t: fd(180.-t)*f_pic(theta_obs+phi-t)/surf_D
+			count_temp[j] = quad(f_asym, theta_obs, phi_min)[0]
+
+	return count_temp
