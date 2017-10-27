@@ -1012,6 +1012,7 @@ class spectre:
 			meth : 	Méthode pour trouver les points d'arrière-plan
 				'mid' : Les points milieu entre les pics sont trouvés
 				'intx' : Un point est mis à chaque intervalle de x degrés (ex : 'int5' met un point à chaque 5 degrés)
+				'maj' : Met les ordonnées des points à jour avec la liste des abscisses fournies
 
 		Rajoute la liste de points dans la structure self.back_pts_list
 		"""
@@ -1019,48 +1020,62 @@ class spectre:
 			print( u'Établir la liste des pics en premier' )
 			return
 
-		peak_list_sorted = []
-		self.back_pts_list = []
 		f_count = interp1d( self.data_smooth.theta, self.data_smooth.count )
 
-		#Le point à gauche de l'intervalle mesuré est toujours ajouté
-		count = float( f_count( self.data_smooth.theta[0] ) )
-		self.back_pts_list.append( [self.data_smooth.theta[0], count, count**0.5] )
+		if meth == 'maj':
+			for b_peak in self.back_pts_list:
+				theta = b_peak[0]
+				count = float( f_count( theta ) )
+				b_peak[1] = count
+				b_peak[2] = count**0.5
 
-		if meth == 'mid':
-			for i in range( len( self.peak_list ) ):
-				peak_list_sorted.append( self.peak_list[i][2] )
 
-			peak_list_sorted.sort()	
+		else:	
 
-			for i in range( len( peak_list_sorted ) - 1):
-				theta_mid = (peak_list_sorted[i] + peak_list_sorted[i+1])/2 
-				count = float( f_count(theta_mid) )
-				self.back_pts_list.append( [theta_mid, count, count**0.5] )
 
-		elif meth[0:3] == 'int':
-			interv = float( meth[3:] )
-			dernierpt = self.raw_data.theta[0]
-			for theta in self.raw_data.theta: 
-				if theta - dernierpt > interv:
-					count = float( f_count(theta) )
-					self.back_pts_list.append( [theta, count, count**0.5] )
-					dernierpt = theta
+			peak_list_sorted = []
+			self.back_pts_list = []
+	
+			#Le point à gauche de l'intervalle mesuré est toujours ajouté
+			count = float( f_count( self.data_smooth.theta[0] ) )
+			self.back_pts_list.append( [self.data_smooth.theta[0], count, count**0.5] )
 
-		count = float( f_count(self.data_smooth.theta[-1]) )
-		self.back_pts_list.append( [self.data_smooth.theta[-1], count, count**0.5 ] )
+			if meth == 'mid':
+				for i in range( len( self.peak_list ) ):
+					peak_list_sorted.append( self.peak_list[i][2] )
 
-		self.etat.back_list = True
+				peak_list_sorted.sort()	
 
-		if self.fit.corr_LP == True:
-			for pt in self.back_pts_list:
-				th0 = pt[0]
-				th_b_rad = th0*np.pi/360.
-				LP = xrdanal.pol_f((th_b_rad), 0)[0] * xrdanal.lor_f((th_b_rad, 0))[0]
-				pt[1] = pt[1]/LP
-				pt[2] = pt[2]/LP
+				for i in range( len( peak_list_sorted ) - 1):
+					theta_mid = (peak_list_sorted[i] + peak_list_sorted[i+1])/2 
+					count = float( f_count(theta_mid) )
+					self.back_pts_list.append( [theta_mid, count, count**0.5] )
 
-		self.clean_back_pts()
+			elif meth[0:3] == 'int':
+				interv = float( meth[3:] )
+				dernierpt = self.raw_data.theta[0]
+				for theta in self.raw_data.theta: 
+					if theta - dernierpt > interv:
+						count = float( f_count(theta) )
+						self.back_pts_list.append( [theta, count, count**0.5] )
+						dernierpt = theta
+
+	
+
+			count = float( f_count(self.data_smooth.theta[-1]) )
+			self.back_pts_list.append( [self.data_smooth.theta[-1], count, count**0.5 ] )
+
+			self.etat.back_list = True
+
+			if self.fit.corr_LP == True:
+				for pt in self.back_pts_list:
+					th0 = pt[0]
+					th_b_rad = th0*np.pi/360.
+					LP = xrdanal.pol_f((th_b_rad), 0)[0] * xrdanal.lor_f((th_b_rad, 0))[0]
+					pt[1] = pt[1]/LP
+					pt[2] = pt[2]/LP
+
+			self.clean_back_pts()
 
 		if plot == 1 or plot ==2:
 			plt.plot( self.raw_data.theta, self.raw_data.count, label = r'Donn\'{e}es brutes' )
@@ -1073,6 +1088,26 @@ class spectre:
 				plt.ylabel( r'$I$ (comptes)' )
 				plt.legend()
 				plt.show()
+
+	def background_add_pt( self, theta, count = 0,  plot = 0):
+
+		if self.etat.peak_list == False:
+			print( u'Établir la liste des pics en premier' )
+			return
+
+		f_count = interp1d( self.data_smooth.theta, self.data_smooth.count )
+
+		for i in range( len( self.back_pts_list ) ):
+			if theta > self.back_pts_list[i][0]:
+				continue
+			elif theta == self.back_pts_list[i][0]:
+				print( 'Point déjà existant' )
+				return
+			else:
+				if count == 0:
+					count = float(f_count(theta))
+				self.back_pts_list.insert(i, [theta, count, count**0.5])
+				return i
 
 	def background_approx( self, plot = 0, dist = 2, method = '1d' ):
 		"""
